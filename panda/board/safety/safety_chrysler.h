@@ -11,7 +11,7 @@ AddrCheckStruct chrysler_addr_checks[] = {
   {.msg = {{544, 0, 8, .check_checksum = true, .max_counter = 15U, .expected_timestep = 10000U}, { 0 }, { 0 }}},
   {.msg = {{514, 0, 8, .check_checksum = false, .max_counter = 0U, .expected_timestep = 10000U}, { 0 }, { 0 }}},
   {.msg = {{500, 0, 8, .check_checksum = true, .max_counter = 15U, .expected_timestep = 20000U}, { 0 }, { 0 }}},
-  {.msg = {{559, 0, 8, .check_checksum = true, .max_counter = 15U,  .expected_timestep = 20000U}, { 0 }, { 0 }}},  // ECM_5 (optech: comma v0.9.2)
+  {.msg = {{308, 0, 8, .check_checksum = false, .max_counter = 15U,  .expected_timestep = 20000U}, { 0 }, { 0 }}},
   {.msg = {{320, 0, 8, .check_checksum = true, .max_counter = 15U,  .expected_timestep = 20000U}, { 0 }, { 0 }}},
 };
 #define CHRYSLER_ADDR_CHECK_LEN (sizeof(chrysler_addr_checks) / sizeof(chrysler_addr_checks[0]))
@@ -79,8 +79,7 @@ static int chrysler_rx_hook(CANPacket_t *to_push) {
 
     // enter controls on rising edge of ACC, exit controls on ACC off
     if (addr == 500) {
-      // optech: comma v0.9.2 panda / python: DAS_3 ACC_ACTIVE (bit 21)
-      int cruise_engaged = ((GET_BYTE(to_push, 2) >> 5) & 1U) == 1U;
+      int cruise_engaged = ((GET_BYTE(to_push, 2) & 0x38U) >> 3) == 7U;
       if (cruise_engaged && !cruise_engaged_prev) {
         controls_allowed = 1;
       }
@@ -98,15 +97,14 @@ static int chrysler_rx_hook(CANPacket_t *to_push) {
       vehicle_moving = (int)vehicle_speed > CHRYSLER_STANDSTILL_THRSLD;
     }
 
-    // exit controls on rising edge of gas press (optech: comma v0.9.2: ECM_5 Accelerator_Position)
-    if (addr == 559) {
-      gas_pressed = GET_BYTE(to_push, 0U) != 0U;
+    // exit controls on rising edge of gas press
+    if (addr == 308) {
+      gas_pressed = ((GET_BYTE(to_push, 5) & 0x7FU) != 0U);
     }
 
     // exit controls on rising edge of brake press
     if (addr == 320) {
-      // optech: comma v0.9.2: ESP_1 Brake_Pedal_State
-      brake_pressed = ((GET_BYTE(to_push, 0U) & 0xFU) >> 2U) == 1U;
+      brake_pressed = (GET_BYTE(to_push, 0) & 0x7U) == 5U;
     }
 
     generic_rx_checks((addr == 0x292));
@@ -170,12 +168,9 @@ static int chrysler_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     }
   }
 
-  // cruise buttons (optech: comma v0.9.2): cancel always, resume only while engaged
+  // FORCE CANCEL: only the cancel button press is allowed
   if (addr == 571) {
-    const bool is_cancel = GET_BYTE(to_send, 0) == 1U;
-    const bool is_resume = GET_BYTE(to_send, 0) == 0x10U;
-    const bool allowed = is_cancel || (is_resume && controls_allowed);
-    if (!allowed) {
+    if ((GET_BYTE(to_send, 0) != 1U) || ((GET_BYTE(to_send, 1) & 1U) == 1U)) {
       tx = 0;
     }
   }

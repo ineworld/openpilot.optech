@@ -22,24 +22,18 @@ const int HYUNDAI_MAX_ACCEL = 250;  // 1/100 m/s2
 const int HYUNDAI_MIN_ACCEL = -400; // -350; // 1/100 m/s2
 
 const CanMsg HYUNDAI_TX_MSGS[] = {
-  {0x200, 0, 6},                            // comma pedal GAS_COMMAND, cars without SCC with a pedal only (tx hook)
   {593, 2, 8},                              // MDPS12, Bus 2
-  {832, 0, 8},                              // LKAS11, Bus 0
-  {1056, 0, 8},                             // SCC11, Bus 0
-  {1057, 0, 8},                             // SCC12, Bus 0
-  {1290, 0, 8},                             // SCC13, Bus 0
-  {905, 0, 8},                              // SCC14, Bus 0
-  {909, 0, 8},                              // FCA11 Bus 0
-  {1155, 0, 8},                             // FCA12 Bus 0
-  {1157, 0, 4},                             // LFAHDA_MFC, Bus 0
-  {1186, 0, 8},                             // FRT_RADAR11, Bus 0
-  {1265, 0, 4}, {1265, 2, 4},               // CLU11, Bus 0, 2
+  {832, 0, 8},  // LKAS11 Bus 0
+  {1265, 0, 4}, // CLU11 Bus 0
+  {1157, 0, 4}, // LFAHDA_MFC Bus 0
 };
 
 const CanMsg HYUNDAI_LONG_TX_MSGS[] = {
   {593, 2, 8},  // MDPS12, Bus 2
   {832, 0, 8},  // LKAS11 Bus 0
-  {1265, 0, 4}, {1265, 2, 4},               // CLU11, Bus 0, 2
+  {832, 1, 8},  // LKAS11 Bus 1
+  {1265, 0, 4}, // CLU11 Bus 0
+  {1265, 1, 4}, // CLU11 Bus 1
   {1157, 0, 4}, // LFAHDA_MFC Bus 0
   {1056, 0, 8}, // SCC11 Bus 0
   {1057, 0, 8}, // SCC12 Bus 0
@@ -53,17 +47,10 @@ const CanMsg HYUNDAI_LONG_TX_MSGS[] = {
 
 const CanMsg HYUNDAI_CAMERA_SCC_TX_MSGS[] = {
   {593, 2, 8},                              // MDPS12, Bus 2
-  {832, 0, 8},                              // LKAS11, Bus 0
-  {1056, 0, 8},                             // SCC11, Bus 0
-  {1057, 0, 8},                             // SCC12, Bus 0
-  {1290, 0, 8},                             // SCC13, Bus 0
-  {905, 0, 8},                              // SCC14, Bus 0
-  {909, 0, 8},                              // FCA11 Bus 0
-  {1155, 0, 8},                             // FCA12 Bus 0
-  {1157, 0, 4},                             // LFAHDA_MFC, Bus 0
-  {1186, 0, 8},                             // FRT_RADAR11, Bus 0
-  {1265, 0, 4}, {1265, 2, 4},               // CLU11, Bus 0, 2
- };
+  {832, 0, 8},  // LKAS11 Bus 0
+  {1265, 2, 4}, // CLU11 Bus 2
+  {1157, 0, 4}, // LFAHDA_MFC Bus 0
+};
 
 AddrCheckStruct hyundai_addr_checks[] = {
   {.msg = {{608, 0, 8, .check_checksum = true, .max_counter = 3U, .expected_timestep = 10000U},
@@ -98,44 +85,32 @@ AddrCheckStruct hyundai_legacy_addr_checks[] = {
            {881, 0, 8, .expected_timestep = 10000U}, { 0 }}},
   {.msg = {{902, 0, 8, .expected_timestep = 10000U}, { 0 }, { 0 }}},
   {.msg = {{916, 0, 8, .expected_timestep = 10000U}, { 0 }, { 0 }}},
-  //{.msg = {{1057, 0, 8, .check_checksum = true, .max_counter = 15U, .expected_timestep = 20000U}, { 0 }, { 0 }}},
+  {.msg = {{1057, 0, 8, .check_checksum = true, .max_counter = 15U, .expected_timestep = 20000U}, { 0 }, { 0 }}},
 };
 #define HYUNDAI_LEGACY_ADDR_CHECK_LEN (sizeof(hyundai_legacy_addr_checks) / sizeof(hyundai_legacy_addr_checks[0]))
 
-// cars without SCC (Kia Ray EV, Porter II EV): no SCC message to wait for, and TCS13 may be missing (Porter)
-AddrCheckStruct hyundai_non_scc_addr_checks[] = {
+AddrCheckStruct hyundai_legacy_long_addr_checks[] = {
   {.msg = {{608, 0, 8, .check_checksum = true, .max_counter = 3U, .expected_timestep = 10000U},
            {881, 0, 8, .expected_timestep = 10000U}, { 0 }}},
   {.msg = {{902, 0, 8, .expected_timestep = 10000U}, { 0 }, { 0 }}},
+  {.msg = {{916, 0, 8, .expected_timestep = 10000U}, { 0 }, { 0 }}},
+  {.msg = {{1265, 0, 4, .check_checksum = false, .max_counter = 15U, .expected_timestep = 20000U}, { 0 }, { 0 }}},
 };
-#define HYUNDAI_NON_SCC_ADDR_CHECK_LEN (sizeof(hyundai_non_scc_addr_checks) / sizeof(hyundai_non_scc_addr_checks[0]))
-
-// ... with a comma pedal: its GAS_SENSOR (0x201, 50 Hz) must keep coming
-AddrCheckStruct hyundai_non_scc_pedal_addr_checks[] = {
-  {.msg = {{608, 0, 8, .check_checksum = true, .max_counter = 3U, .expected_timestep = 10000U},
-           {881, 0, 8, .expected_timestep = 10000U}, { 0 }}},
-  {.msg = {{902, 0, 8, .expected_timestep = 10000U}, { 0 }, { 0 }}},
-  {.msg = {{0x201, 0, 6, .expected_timestep = 20000U}, { 0 }, { 0 }}},
-};
-#define HYUNDAI_NON_SCC_PEDAL_ADDR_CHECK_LEN (sizeof(hyundai_non_scc_pedal_addr_checks) / sizeof(hyundai_non_scc_pedal_addr_checks[0]))
-
-// pedal state kept apart from gas_pressed / brake_pressed, which apilot clears for every Hyundai below
-bool hyundai_pedal_gas_pressed = false;
-bool hyundai_pedal_brake_pressed = false;
-bool hyundai_pedal_tcs13_seen = false;
-
-static uint8_t hyundai_pedal_checksum(CANPacket_t *msg) {
-  uint8_t crc = 0xFFU;
-  for (int i = 4; i >= 0; i--) {
-    crc ^= GET_BYTE(msg, i);
-    for (int j = 0; j < 8; j++) {
-      crc = ((crc & 0x80U) != 0U) ? (uint8_t)((crc << 1U) ^ 0xD5U) : (uint8_t)(crc << 1U);
-    }
-  }
-  return crc;
-}
+#define HYUNDAI_LEGACY_LONG_ADDR_CHECK_LEN (sizeof(hyundai_legacy_long_addr_checks) / sizeof(hyundai_legacy_long_addr_checks[0]))
 
 bool hyundai_legacy = false;
+
+int     busSCC = -1;
+int     busLKAS11 = -1;
+int     cruiseEngaged = 0;
+
+bool apilot_connected_prev = false;
+uint32_t LKAS11_lastTxTime = 0;
+uint32_t LKAS11_maxTxDiffTime = 0;
+bool LKAS11_forwarding = true;
+uint32_t last_ts_mdps12_from_op = 0; // from neokii
+extern int mdpsConnectedBus;
+
 
 addr_checks hyundai_rx_checks = {hyundai_addr_checks, HYUNDAI_ADDR_CHECK_LEN};
 
@@ -223,45 +198,35 @@ static int hyundai_rx_hook(CANPacket_t *to_push) {
   int addr = GET_ADDR(to_push);
 
   // SCC12 is on bus 2 for camera-based SCC cars, bus 0 on all others
-  /*if (valid && (addr == 1057) && (((bus == 0 || bus == 2) && !hyundai_camera_scc) )) {
+  if (valid && (addr == 1057) && (((bus == 0 || bus == 2) && !hyundai_camera_scc) || ((bus == 2) && hyundai_camera_scc))) {
     // 2 bits: 13-14
-    int cruise_engaged = (GET_BYTES(to_push, 0, 4) >> 13) & 0x3U;
-    hyundai_common_cruise_state_check(cruise_engaged);
-  }*/
-
-  // comma pedal: the driver's pedal (raw tracks, StarPilot Ray firmware thresholds) and the brake, for the pedal command checks
-  if (valid && hyundai_non_scc_pedal && (bus == 0)) {
-    if (addr == 0x201) {
-      const uint32_t track1 = ((uint32_t)GET_BYTE(to_push, 0) << 8) | GET_BYTE(to_push, 1);
-      const uint32_t track2 = ((uint32_t)GET_BYTE(to_push, 2) << 8) | GET_BYTE(to_push, 3);
-      hyundai_pedal_gas_pressed = (track1 > 272U) || (track2 > 513U);
+    int cruise_engaged = (GET_BYTES_04(to_push) >> 13) & 0x3U;
+    if (cruiseEngaged != cruise_engaged) {
+        puts("CruiseState...: "); puth2(cruise_engaged); puts("\n");
+        cruiseEngaged = cruise_engaged;
     }
-    if (addr == 916) {
-      hyundai_pedal_tcs13_seen = true;
-      hyundai_pedal_brake_pressed = GET_BIT(to_push, 55U) != 0U;
-    }
-    if ((addr == 881) && !hyundai_pedal_tcs13_seen) {
-      hyundai_pedal_brake_pressed = GET_BYTE(to_push, 0) != 0U;  // E_EMS11 Brake_Pedal_Pos (Porter has no TCS13)
-    }
+    hyundai_common_cruise_state_check2(cruise_engaged);
   }
-
-  // no SCC: like the SCC cars here (apilot keeps controls allowed), the wheel speed message stands in for SCC11
-  if (valid && hyundai_non_scc && (bus == 0) && (addr == 902)) {
-    hyundai_common_cruise_state_check(1);
+  // SCC11 is on bus 2
+  if (valid && (addr == 1056) && (((bus == 0 || bus == 2) && !hyundai_camera_scc) || ((bus == 2) && hyundai_camera_scc))) {
+      // 1 bits: 0
+      int cruise_engaged = (GET_BYTES_04(to_push) >> 0) & 0x1U;
+      static int cruise_engaged_pre = 0;
+      if (cruise_engaged_pre != cruise_engaged) {
+          puts("CruiseSet...: "); puth2(cruise_engaged); puts("\n");
+          cruise_engaged_pre = cruise_engaged;
+      }
+      hyundai_common_cruise_state_check(cruise_engaged);
   }
-
-  if (valid && (addr == 1056)) { //  MainMode_ACC
-    // 1 bits: 0
-    int cruise_available = GET_BIT(to_push, 0U);
-    hyundai_common_cruise_state_check(cruise_available);
+  if (valid) {
+      if (addr == 593) {
+          int torque_driver_new = ((GET_BYTES_04(to_push) & 0x7ffU) * 0.79) - 808; // scale down new driver torque signal to match previous one
+          // update array of samples
+          update_sample(&torque_driver, torque_driver_new);
+      }
   }
 
   if (valid && (bus == 0)) {
-    if (addr == 593) {
-      int torque_driver_new = ((int)(GET_BYTES(to_push, 0, 4) & 0x7ffU) - 982) * 0.4;
-      // update array of samples
-      update_sample(&torque_driver, torque_driver_new);
-    }
 
     // ACC steering wheel buttons
     if (addr == 1265) {
@@ -282,9 +247,9 @@ static int hyundai_rx_hook(CANPacket_t *to_push) {
 
     // sample wheel speed, averaging opposite corners
     if (addr == 902) {
-      uint32_t front_left_speed = GET_BYTES(to_push, 0, 2) & 0x3FFFU;
-      uint32_t rear_right_speed = GET_BYTES(to_push, 6, 2) & 0x3FFFU;
-      vehicle_moving = (front_left_speed > HYUNDAI_STANDSTILL_THRSLD) || (rear_right_speed > HYUNDAI_STANDSTILL_THRSLD);
+      uint32_t hyundai_speed = (GET_BYTES_04(to_push) & 0x3FFFU) + ((GET_BYTES_48(to_push) >> 16) & 0x3FFFU);  // FL + RR
+      hyundai_speed /= 2;
+      vehicle_moving = hyundai_speed > HYUNDAI_STANDSTILL_THRSLD;
     }
 
     if (addr == 916) {
@@ -302,14 +267,8 @@ static int hyundai_rx_hook(CANPacket_t *to_push) {
     }
     generic_rx_checks(stock_ecu_detected);
   }
-
   return valid;
 }
-
-uint32_t last_ts_lkas11_from_op = 0;
-uint32_t last_ts_scc12_from_op = 0;
-uint32_t last_ts_mdps12_from_op = 0;
-uint32_t last_ts_fca11_from_op = 0;
 
 static int hyundai_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
 
@@ -330,35 +289,8 @@ static int hyundai_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
       if (mainModeACC == 1) {
           controls_allowed = 1;
           hyundai_auto_engage = 0;
+          LKAS11_forwarding = true;
       }
-  }
-
-  // comma pedal command (StarPilot Ray pedal checks): only on a car without SCC with the pedal flag; enabled commands stay
-  // in the calibrated range (track2 follows track1), disabled ones are all zero, and no throttle without controls allowed
-  // or while the driver presses the gas or the brake
-  if (addr == 0x200) {
-    if (!hyundai_non_scc_pedal) {
-      tx = 0;
-    } else {
-      const int track1 = (GET_BYTE(to_send, 0) << 8) | GET_BYTE(to_send, 1);
-      const int track2 = (GET_BYTE(to_send, 2) << 8) | GET_BYTE(to_send, 3);
-      const bool enabled = (GET_BYTE(to_send, 4) & 0x80U) != 0U;
-      const int expected_track2 = 497 + (2 * (track1 - 264));
-      bool violation = (GET_BYTE(to_send, 4) & 0x70U) != 0U;
-      violation |= GET_BYTE(to_send, 5) != hyundai_pedal_checksum(to_send);
-      if (enabled) {
-        const int track1_max = hyundai_non_scc_pedal_strong ? 795 : 530;
-        const int track2_max = hyundai_non_scc_pedal_strong ? 1572 : 1035;
-        violation |= (track1 < 264) || (track1 > track1_max) || (track2 < 497) || (track2 > track2_max);
-        violation |= ABS(track2 - expected_track2) > 40;
-        violation |= !controls_allowed || hyundai_pedal_gas_pressed || hyundai_pedal_brake_pressed;
-      } else {
-        violation |= (track1 != 0) || (track2 != 0);
-      }
-      if (violation) {
-        tx = 0;
-      }
-    }
   }
 
   // FCA11: Block any potential actuation
@@ -395,24 +327,28 @@ static int hyundai_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     //violation |= (aeb_req != 0);
 
     if (violation) {
+        puts("violation[1057]: raw = ");
+        puth(desired_accel_raw); puts(", val="); puth(desired_accel_val); puts("\n");
       tx = 0;
     }
   }
 
   // LKA STEER: safety check
   if (addr == 832) {
-    int desired_torque = ((GET_BYTES(to_send, 0, 4) >> 16) & 0x7ffU) - 1024U;
+    int desired_torque = ((GET_BYTES_04(to_send) >> 16) & 0x7ffU) - 1024U;
     bool steer_req = GET_BIT(to_send, 27U) != 0U;
 
     if (steer_torque_cmd_checks(desired_torque, steer_req, HYUNDAI_STEERING_LIMITS)) {
       //tx = 0;
+      LKAS11_forwarding = false;// true;
       puts("violation[LKAS11, 832]\n");
     }
+    else LKAS11_forwarding = false;
   }
 
   // UDS: Only tester present ("\x02\x3E\x80\x00\x00\x00\x00\x00") allowed on diagnostics address
   if (addr == 2000) {
-    if ((GET_BYTES(to_send, 0, 4) != 0x00803E02U) || (GET_BYTES(to_send, 4, 4) != 0x0U)) {
+    if ((GET_BYTES_04(to_send) != 0x00803E02U) || (GET_BYTES_48(to_send) != 0x0U)) {
       tx = 0;
     }
   }
@@ -422,22 +358,21 @@ static int hyundai_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     int button = GET_BYTE(to_send, 0) & 0x7U;
 
     bool allowed_resume = (button == 1) && controls_allowed;
-    bool allowed_set_decel = (button == 2) && controls_allowed;
     bool allowed_cancel = (button == 4) && cruise_engaged_prev;
-    bool allowed_gap_dist = (button == 3) && controls_allowed;
-    if (!(allowed_resume || allowed_set_decel || allowed_cancel || allowed_gap_dist)) {
+    bool allowed_set = (button == 2) && controls_allowed;
+    bool allowed_gap = (button == 3) && controls_allowed;
+    if (!(allowed_resume || allowed_cancel || allowed_set || allowed_gap)) {
       tx = 0;
     }
   }
 
-  if(addr == 832)
-    last_ts_lkas11_from_op = (tx == 0 ? 0 : microsecond_timer_get());
-  else if(addr == 1057)
-    last_ts_scc12_from_op = (tx == 0 ? 0 : microsecond_timer_get());
-  else if(addr == 593)
-    last_ts_mdps12_from_op = (tx == 0 ? 0 : microsecond_timer_get());
-  else if(addr == 909)
-    last_ts_fca11_from_op = (tx == 0 ? 0 : microsecond_timer_get());
+  apilot_connected = true;
+  if (addr == 832) {
+      LKAS11_lastTxTime = microsecond_timer_get();
+  }
+  else if (addr == 593) {
+      last_ts_mdps12_from_op = microsecond_timer_get();
+  }
 
   return tx;
 }
@@ -447,50 +382,87 @@ static int hyundai_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
   int bus_fwd = -1;
   int addr = GET_ADDR(to_fwd);
 
+  int is_lkas11_msg = (addr == 832);
+  int is_lfahda_mfc_msg = (addr == 1157);
+  int is_scc_msg = (addr == 1056) || (addr == 1057) || (addr == 1290) || (addr == 905);
+  //int is_fca_msg = (addr == 909) || (addr == 1155);
   uint32_t now = microsecond_timer_get();
 
+  //int is_clu11_msg = (addr == 1265);
+  //int is_mdps12_msg = (addr = 593);
+  //int is_ems11_msg = (addr == 790);
   // forward cam to ccan and viceversa, except lkas cmd
+  if (apilot_connected != apilot_connected_prev) {
+      puts("[hyundai_fwd_hook] apilot_connected="); puth2(apilot_connected); puts("\n");
+      apilot_connected_prev = apilot_connected;
+  }
   if (bus_num == 0) {
     bus_fwd = 2;
-
-    if(addr == 593) {
-      if(now - last_ts_mdps12_from_op < 200000) {
-        bus_fwd = -1;
-      }
+    if (mdpsConnectedBus == 1) bus_fwd = 12; 
+    else if (mdpsConnectedBus == 3) bus_fwd = 32; 
+    if (addr == 593) {  // MDPS12 버스가 0번에 있음..
+        mdpsConnectedBus = 0;
+        if (now - last_ts_mdps12_from_op < 200000) {  // 일부차량은 mdps코드를 OP가 LKAS에 별도로 보내고 있으니, 보내지말자!
+            bus_fwd = -1;
+        }
+    }
+    else if (addr == 1265) {  // CLU11, mdps개조한경우, 해당 mdps버스(1 or 3)에는 op가 보냄.
+        if (apilot_connected) bus_fwd = 2;
     }
   }
+  else if (bus_num == 2) {
 
-  if (bus_num == 2) {
-    bool is_lkas_msg = addr == 832;
-    bool is_lfahda_msg = addr == 1157;
-    bool is_scc_msg = addr == 1056 || addr == 1057 || addr == 1290 || addr == 905;
-    bool is_fca_msg = addr == 909 || addr == 1155;
+      //int block_msg = is_lkas11_msg || is_lfahda_mfc_msg || is_scc_msg;
+      int block_msg = is_lfahda_mfc_msg || is_scc_msg;
+      block_msg |= (LKAS11_forwarding) ? 0 : is_lkas11_msg;  // LKAS메시지에 불량이 있으면 TX를 안함.. 여기서 그냥 포워딩해버리자 => 시험..
 
-    bool block_msg = is_lkas_msg || is_lfahda_msg || is_scc_msg; //|| is_fca_msg;
-    if (!block_msg) {
-      bus_fwd = 0;
-    }
-    else {
-      if(is_lkas_msg || is_lfahda_msg) {
-        if(now - last_ts_lkas11_from_op >= 200000) {
-          bus_fwd = 0;
-        }
+      // apilot이 연결되면: sccxx, lkas11는 op가 보냄.
+      if (apilot_connected) {
+          if (!block_msg) { // 그외의 것은 foward하자..
+                bus_fwd = 0;
+                // mdps가 개조된경우에는 mdps에도 보내주자..: 안보내도 될듯하지만....
+                if (mdpsConnectedBus == 1) bus_fwd = 10; 
+                else if (mdpsConnectedBus == 3) bus_fwd = 30; 
+          }
       }
-      else if(is_scc_msg) {
-        if(now - last_ts_scc12_from_op >= 400000)
+      else {
           bus_fwd = 0;
+          if (mdpsConnectedBus == 1) bus_fwd = 10; 
+          else if (mdpsConnectedBus == 3) bus_fwd = 30; 
+          if (is_lkas11_msg) {
+              LKAS11_lastTxTime = microsecond_timer_get();
+              LKAS11_maxTxDiffTime = 0;
+          }
       }
-      else if(is_fca_msg) {
-        if(now - last_ts_fca11_from_op >= 400000)
-          bus_fwd = 0;
+  }
+  else if (bus_num == mdpsConnectedBus) {  // bus가 1또는 3인경우  (mdps버스가 개조된경우에만)
+      bus_fwd = 20; // 593, 688, 897코드 모두 캔버스로 실어보내자..
+      if (addr == 593) {
+          if (now - last_ts_mdps12_from_op < 200000) {  // 일부차량은 mdps코드를 OP가 LKAS에 별도로 보내고 있으니, 보내지말자!
+              bus_fwd = -1;
+          }
       }
-    }
+  }
+  if (apilot_connected) {
+      //uint32_t now = microsecond_timer_get();
+      uint32_t diff = now - LKAS11_lastTxTime;
+      if (diff > LKAS11_maxTxDiffTime)
+      {
+          LKAS11_maxTxDiffTime = diff;
+          puts("diff="); puth(diff); puts("\n");
+      }
+      if (diff > 0x15000) {
+          apilot_connected = false;  // Neokii코드 참조: 오픈파일럿이 죽거나 재부팅하면,,,, 강제로 끊어줌.
+          puts("apilot may be reboot...\n");
+          controls_allowed = false;
+      }
   }
 
   return bus_fwd;
 }
 
 static const addr_checks* hyundai_init(int16_t param) {
+  controls_allowed = false;
   hyundai_common_init(param);
   hyundai_legacy = false;
 
@@ -509,20 +481,16 @@ static const addr_checks* hyundai_init(int16_t param) {
 }
 
 static const addr_checks* hyundai_legacy_init(int16_t param) {
+  controls_allowed = false;
   hyundai_common_init(param);
   hyundai_legacy = true;
-  hyundai_longitudinal = false;
+  //hyundai_longitudinal = false;
   hyundai_camera_scc = false;
-
-  hyundai_pedal_gas_pressed = false;
-  hyundai_pedal_brake_pressed = false;
-  hyundai_pedal_tcs13_seen = false;
-  if (hyundai_non_scc_pedal) {
-    hyundai_rx_checks = (addr_checks){hyundai_non_scc_pedal_addr_checks, HYUNDAI_NON_SCC_PEDAL_ADDR_CHECK_LEN};
-  } else if (hyundai_non_scc) {
-    hyundai_rx_checks = (addr_checks){hyundai_non_scc_addr_checks, HYUNDAI_NON_SCC_ADDR_CHECK_LEN};
-  } else {
-    hyundai_rx_checks = (addr_checks){hyundai_legacy_addr_checks, HYUNDAI_LEGACY_ADDR_CHECK_LEN};
+  if (hyundai_longitudinal) {
+      hyundai_rx_checks = (addr_checks){ hyundai_legacy_long_addr_checks, HYUNDAI_LEGACY_LONG_ADDR_CHECK_LEN };
+  }
+  else {
+      hyundai_rx_checks = (addr_checks){ hyundai_legacy_addr_checks, HYUNDAI_LEGACY_ADDR_CHECK_LEN };
   }
   return &hyundai_rx_checks;
 }

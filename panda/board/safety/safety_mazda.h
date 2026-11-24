@@ -12,10 +12,10 @@
 #define MAZDA_AUX  1
 #define MAZDA_CAM  2
 
-#define MAZDA_MAX_STEER 800  // optech: comma v0.9.2 panda (python STEER_MAX 800); the CAN offset is 2048
+#define MAZDA_MAX_STEER 2048U
 
 // max delta torque allowed for real time checks
-#define MAZDA_MAX_RT_DELTA 300  // optech: comma v0.9.2 panda
+#define MAZDA_MAX_RT_DELTA 940
 // 250ms between real time checks
 #define MAZDA_RT_INTERVAL 250000
 #define MAZDA_MAX_RATE_UP 10
@@ -96,7 +96,7 @@ static int mazda_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
 
     // steer cmd checks
     if (addr == MAZDA_LKAS) {
-      int desired_torque = (((GET_BYTE(to_send, 0) & 0x0FU) << 8) | GET_BYTE(to_send, 1)) - 2048U;
+      int desired_torque = (((GET_BYTE(to_send, 0) & 0x0FU) << 8) | GET_BYTE(to_send, 1)) - MAZDA_MAX_STEER;
       bool violation = 0;
       uint32_t ts = microsecond_timer_get();
 

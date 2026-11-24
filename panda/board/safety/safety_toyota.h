@@ -42,13 +42,6 @@ AddrCheckStruct toyota_addr_checks[] = {
 addr_checks toyota_rx_checks = {toyota_addr_checks, TOYOTA_ADDR_CHECKS_LEN};
 
 // global actuation limit states
-// safety param: low byte is the eps factor, the bits above are flags (comma panda #925 / #931, offset 8 for the
-// 16-bit param); only ALT_BRAKE is backported here
-// (macros: in C a const int can't initialise another constant)
-#define TOYOTA_PARAM_OFFSET 8
-#define TOYOTA_EPS_FACTOR ((1 << TOYOTA_PARAM_OFFSET) - 1)
-#define TOYOTA_PARAM_ALT_BRAKE (1 << TOYOTA_PARAM_OFFSET)
-bool toyota_alt_brake = false;
 int toyota_dbc_eps_torque_factor = 100;   // conversion factor for STEER_TORQUE_EPS in %: see dbc file
 
 static uint8_t toyota_compute_checksum(CANPacket_t *to_push) {
@@ -121,7 +114,7 @@ static int toyota_rx_hook(CANPacket_t *to_push) {
     }
 
     // most cars have brake_pressed on 0x226, corolla and rav4 on 0x224
-    if (((addr == 0x224) && toyota_alt_brake) || ((addr == 0x226) && !toyota_alt_brake)) {
+    if ((addr == 0x224) || (addr == 0x226)) {
       int byte = (addr == 0x224) ? 0 : 4;
       brake_pressed = ((GET_BYTE(to_push, byte) >> 5) & 1U) != 0U;
     }
@@ -259,8 +252,7 @@ static const addr_checks* toyota_init(int16_t param) {
   controls_allowed = 0;
   relay_malfunction_reset();
   gas_interceptor_detected = 0;
-  toyota_alt_brake = GET_FLAG(param, TOYOTA_PARAM_ALT_BRAKE);
-  toyota_dbc_eps_torque_factor = param & TOYOTA_EPS_FACTOR;
+  toyota_dbc_eps_torque_factor = param;
   return &toyota_rx_checks;
 }
 

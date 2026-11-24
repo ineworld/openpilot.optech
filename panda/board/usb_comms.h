@@ -273,9 +273,6 @@ int usb_cb_control_msg(USB_Setup_TypeDef *setup, uint8_t *resp) {
 
     // **** 0xdc: set safety mode
     case 0xdc:
-      if (setup->b.wValue.w == SAFETY_NOOUTPUT) {
-        idle_passthrough = (setup->b.wIndex.w & NOOUTPUT_PARAM_IDLE_PASSTHROUGH) != 0U;
-      }
       set_safety_mode(setup->b.wValue.w, (uint16_t) setup->b.wIndex.w);
       break;
     // **** 0xdd: get healthpacket and CANPacket versions

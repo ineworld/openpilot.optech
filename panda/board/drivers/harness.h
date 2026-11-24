@@ -3,12 +3,6 @@ uint8_t car_harness_status = 0U;
 #define HARNESS_STATUS_NORMAL 1U
 #define HARNESS_STATUS_FLIPPED 2U
 
-// optech: relay off (car <-> camera direct) while openpilot is not in control, like comma / dragonpilot d2.
-// Set only by the device (USB set safety mode NOOUTPUT with param bit 0) for non Hyundai / Kia cars; Hyundai / Kia
-// keep this panda's relay-on. The heartbeat-lost fallback does not touch it.
-#define NOOUTPUT_PARAM_IDLE_PASSTHROUGH 1U
-bool idle_passthrough = false;
-
 struct harness_configuration {
   const bool has_harness;
   GPIO_TypeDef *GPIO_SBU1;

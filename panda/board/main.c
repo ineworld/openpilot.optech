@@ -87,21 +87,21 @@ void set_safety_mode(uint16_t mode, int16_t param) {
 
   switch (mode_copy) {
     case SAFETY_SILENT:
-      set_intercept_relay(!idle_passthrough);  // optech: off for non Hyundai / Kia (comma / d2)
+      set_intercept_relay(true);
       if (current_board->has_obd) {
         current_board->set_can_mode(CAN_MODE_NORMAL);
       }
       can_silent = ALL_CAN_SILENT;
       break;
     case SAFETY_NOOUTPUT:
-      set_intercept_relay(!idle_passthrough);  // optech: off for non Hyundai / Kia (comma / d2)
+      set_intercept_relay(true);
       if (current_board->has_obd) {
         current_board->set_can_mode(CAN_MODE_NORMAL);
       }
       can_silent = ALL_CAN_LIVE;
       break;
     case SAFETY_ELM327:
-      set_intercept_relay(!idle_passthrough);  // optech: off for non Hyundai / Kia (comma / d2)
+      set_intercept_relay(true);
       heartbeat_counter = 0U;
       heartbeat_lost = false;
       if (current_board->has_obd) {
@@ -255,22 +255,6 @@ void tick_handler(void) {
 
       // check registers
       check_registers();
-
-      // optech: the harness orientation is detected once at boot; if that failed, keep trying (comma / d2 retry
-      // every second). A not-detected harness never drives the relay, so this changes nothing for a working setup.
-      if ((car_harness_status == HARNESS_STATUS_NC) && current_board->harness_config->has_harness) {
-        uint8_t orientation = harness_detect_orientation();
-        if (orientation != HARNESS_STATUS_NC) {
-          puts("late car harness detection: "); puth2(orientation); puts("\n");
-          car_harness_status = orientation;
-          set_gpio_mode(current_board->harness_config->GPIO_SBU1, current_board->harness_config->pin_SBU1, MODE_INPUT);
-          set_gpio_mode(current_board->harness_config->GPIO_SBU2, current_board->harness_config->pin_SBU2, MODE_INPUT);
-          if (orientation == HARNESS_STATUS_FLIPPED) {
-            can_flip_buses(0, 2);
-          }
-          set_safety_mode(current_safety_mode, current_safety_param);
-        }
-      }
 
       // set ignition_can to false after 2s of no CAN seen
       if (ignition_can_cnt > 2U) {

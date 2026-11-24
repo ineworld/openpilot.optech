@@ -11,56 +11,29 @@
 const int GM_MAX_STEER = 300;
 const int GM_MAX_RT_DELTA = 128;          // max delta torque allowed for real time checks
 const uint32_t GM_RT_INTERVAL = 250000;    // 250ms between real time checks
-const int GM_MAX_RATE_UP = 10;    // python STEER_DELTA_UP (comma panda 0.9.x GM_STEERING_LIMITS)
-const int GM_MAX_RATE_DOWN = 15;  // python STEER_DELTA_DOWN
-const int GM_DRIVER_TORQUE_ALLOWANCE = 65;  // python STEER_DRIVER_ALLOWANCE
+const int GM_MAX_RATE_UP = 7;
+const int GM_MAX_RATE_DOWN = 17;
+const int GM_DRIVER_TORQUE_ALLOWANCE = 50;
 const int GM_DRIVER_TORQUE_FACTOR = 4;
 const int GM_MAX_GAS = 3072;
 const int GM_MAX_REGEN = 1404;
 const int GM_MAX_BRAKE = 350;
-const CanMsg GM_ASCM_TX_MSGS[] = {{384, 0, 4}, {1033, 0, 7}, {1034, 0, 7}, {715, 0, 8}, {880, 0, 6},  // pt bus
-                                  {161, 1, 7}, {774, 1, 8}, {776, 1, 7}, {784, 1, 2},   // obs bus
-                                  {789, 2, 5},  // ch bus
-                                  {0x104c006c, 3, 3}, {0x10400060, 3, 5}};  // gmlan
-
-// camera harness (Bolt EUV 2022-23): LKAS, the cancel button and PSCMStatus; stock ACC does longitudinal
-const CanMsg GM_CAM_TX_MSGS[] = {{384, 0, 4},  // pt bus
-                                 {481, 2, 7}, {388, 2, 8},  // camera bus
-                                 {0x200, 0, 6}};  // comma pedal GAS_COMMAND: Bolt EV without ACC with the pedal param only (tx hook)
+const CanMsg GM_TX_MSGS[] = {{384, 0, 4}, {1033, 0, 7}, {1034, 0, 7}, {715, 0, 8}, {880, 0, 6},  // pt bus
+                             {161, 1, 7}, {774, 1, 8}, {776, 1, 7}, {784, 1, 2},   // obs bus
+                             {789, 2, 5},  // ch bus
+                             {0x104c006c, 3, 3}, {0x10400060, 3, 5}};  // gmlan
 
 // TODO: do checksum and counter checks. Add correct timestep, 0.1s for now.
 AddrCheckStruct gm_addr_checks[] = {
   {.msg = {{388, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
   {.msg = {{842, 0, 5, .expected_timestep = 100000U}, { 0 }, { 0 }}},
   {.msg = {{481, 0, 7, .expected_timestep = 100000U}, { 0 }, { 0 }}},
-  {.msg = {{241, 0, 6, .expected_timestep = 100000U}, { 0 }, { 0 }}},
+  {.msg = {{201, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
   {.msg = {{452, 0, 8, .expected_timestep = 100000U}, { 0 }, { 0 }}},
 };
 #define GM_RX_CHECK_LEN (sizeof(gm_addr_checks) / sizeof(gm_addr_checks[0]))
 addr_checks gm_rx_checks = {gm_addr_checks, GM_RX_CHECK_LEN};
 
-
-// camera harness (Bolt EUV 2022-23), backported from comma panda 0.8.16 via sunnystar-c2
-const int16_t GM_PARAM_HW_CAM = 1;
-// 2 is comma's HW_CAM_LONG (not here)
-// Bolt EV 2017-21 without ACC on the camera harness (ds5ajd/openpilot 0814): openpilot does not spoof PSCMStatus for it,
-// so the camera keeps getting the car's own
-const int16_t GM_PARAM_CC_ONLY = 4;
-// ... and with a comma pedal the pedal does the longitudinal: SET/RESUME engage like the ASCM cars
-const int16_t GM_PARAM_PEDAL = 8;
-// Bolt EV 2017 (chosen on the Bolt EV settings page): its weaker EPS gets StarPilot's GM_BOLT_2017_STEERING_LIMITS
-const int16_t GM_PARAM_BOLT_2017 = 16;
-bool gm_cc_only = false;
-bool gm_pedal = false;
-// steering limits in use (GM_MAX_STEER ... above, or the Bolt 2017 ones)
-int gm_max_steer = 300;
-int gm_max_rate_up = 10;
-int gm_max_rate_down = 15;
-int gm_driver_torque_allowance = 65;
-int gm_driver_torque_factor = 4;
-int gm_max_rt_delta = 128;
-enum {GM_ASCM, GM_CAM} gm_hw = GM_ASCM;
-int gm_cruise_button_prev = 0;
 
 enum {
   GM_BTN_UNPRESS = 1,
@@ -89,8 +62,8 @@ static int gm_rx_hook(CANPacket_t *to_push) {
       vehicle_moving = GET_BYTE(to_push, 0) | GET_BYTE(to_push, 1);
     }
 
-    // ACC steering wheel buttons (GM_CAM is tied to the PCM)
-    if ((addr == 481) && ((gm_hw == GM_ASCM) || gm_pedal)) {
+    // ACC steering wheel buttons
+    if (addr == 481) {
       int button = (GET_BYTE(to_push, 5) & 0x70U) >> 4;
 
       // exit controls on cancel press
@@ -99,44 +72,21 @@ static int gm_rx_hook(CANPacket_t *to_push) {
       }
 
       // enter controls on falling edge of set or resume
-      bool set = (button == GM_BTN_UNPRESS) && (gm_cruise_button_prev == GM_BTN_SET);
-      bool res = (button == GM_BTN_UNPRESS) && (gm_cruise_button_prev == GM_BTN_RESUME);
+      bool set = (button == GM_BTN_UNPRESS) && (cruise_button_prev == GM_BTN_SET);
+      bool res = (button == GM_BTN_UNPRESS) && (cruise_button_prev == GM_BTN_RESUME);
       if (set || res) {
         controls_allowed = 1;
       }
 
-      gm_cruise_button_prev = button;
+      cruise_button_prev = button;
     }
 
-    // EBCMBrakePedalPosition: the potentiometer reads near zero even when the pedal is not pressed
-    if (addr == 241) {
-      brake_pressed = GET_BYTE(to_push, 1) >= 10U;
+    if (addr == 201) {
+      brake_pressed = GET_BIT(to_push, 40U) != 0U;
     }
 
-    // comma pedal: the driver's own pedal shows in GAS_SENSOR (average of the two tracks, comma GM threshold)
-    if (gm_pedal && (addr == 0x201)) {
-      gas_interceptor_detected = 1;
-      int gas_interceptor = (((GET_BYTE(to_push, 0) << 8) + GET_BYTE(to_push, 1)) + ((GET_BYTE(to_push, 2) << 8) + GET_BYTE(to_push, 3))) / 2;
-      gas_pressed = gas_interceptor > 458;
-      gas_interceptor_prev = gas_interceptor;
-    }
-
-    if ((addr == 452) && !(gm_pedal && gas_interceptor_detected)) {
-      gas_pressed = GET_BYTE(to_push, 5) != 0U;
-    }
     if (addr == 452) {
-
-      // camera harness: enter controls on rising edge of stock ACC, exit when ACC is off (not with the pedal: no stock ACC)
-      if ((gm_hw == GM_CAM) && !gm_pedal) {
-        bool cruise_engaged = (GET_BYTE(to_push, 1) >> 5) != 0U;
-        if (cruise_engaged && !cruise_engaged_prev) {
-          controls_allowed = 1;
-        }
-        if (!cruise_engaged) {
-          controls_allowed = 0;
-        }
-        cruise_engaged_prev = cruise_engaged;
-      }
+      gas_pressed = GET_BYTE(to_push, 5) != 0U;
     }
 
     // exit controls on regen paddle
@@ -147,13 +97,11 @@ static int gm_rx_hook(CANPacket_t *to_push) {
       }
     }
 
-    bool stock_ecu_detected = (addr == 384);  // ASCMLKASteeringCmd
-
-    // Only check ASCMGasRegenCmd if ASCM, GM_CAM uses stock longitudinal
-    if ((gm_hw == GM_ASCM) && (addr == 715)) {
-      stock_ecu_detected = true;
-    }
-    generic_rx_checks(stock_ecu_detected);
+    // Check if ASCM or LKA camera are online
+    // on powertrain bus.
+    // 384 = ASCMLKASteeringCmd
+    // 715 = ASCMGasRegenCmd
+    generic_rx_checks(((addr == 384) || (addr == 715)));
   }
   return valid;
 }
@@ -169,10 +117,8 @@ static int gm_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
   int tx = 1;
   int addr = GET_ADDR(to_send);
 
-  if (gm_hw == GM_CAM) {
-    tx = msg_allowed(to_send, GM_CAM_TX_MSGS, sizeof(GM_CAM_TX_MSGS)/sizeof(GM_CAM_TX_MSGS[0]));
-  } else {
-    tx = msg_allowed(to_send, GM_ASCM_TX_MSGS, sizeof(GM_ASCM_TX_MSGS)/sizeof(GM_ASCM_TX_MSGS[0]));
+  if (!msg_allowed(to_send, GM_TX_MSGS, sizeof(GM_TX_MSGS)/sizeof(GM_TX_MSGS[0]))) {
+    tx = 0;
   }
 
   // disallow actuator commands if gas or brake (with vehicle moving) are pressed
@@ -208,18 +154,18 @@ static int gm_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     if (current_controls_allowed) {
 
       // *** global torque limit check ***
-      violation |= max_limit_check(desired_torque, gm_max_steer, -gm_max_steer);
+      violation |= max_limit_check(desired_torque, GM_MAX_STEER, -GM_MAX_STEER);
 
       // *** torque rate limit check ***
       violation |= driver_limit_check(desired_torque, desired_torque_last, &torque_driver,
-        gm_max_steer, gm_max_rate_up, gm_max_rate_down,
-        gm_driver_torque_allowance, gm_driver_torque_factor);
+        GM_MAX_STEER, GM_MAX_RATE_UP, GM_MAX_RATE_DOWN,
+        GM_DRIVER_TORQUE_ALLOWANCE, GM_DRIVER_TORQUE_FACTOR);
 
       // used next time
       desired_torque_last = desired_torque;
 
       // *** torque real time rate limit check ***
-      violation |= rt_rate_limit_check(desired_torque, rt_torque_last, gm_max_rt_delta);
+      violation |= rt_rate_limit_check(desired_torque, rt_torque_last, GM_MAX_RT_DELTA);
 
       // every RT_INTERVAL set the new limits
       uint32_t ts_elapsed = get_ts_elapsed(ts, ts_last);
@@ -269,70 +215,12 @@ static int gm_tx_hook(CANPacket_t *to_send, bool longitudinal_allowed) {
     }
   }
 
-  // GAS: comma pedal (Bolt EV without ACC with the pedal param only): no throttle without controls allowed or with the brake on
-  if (addr == 0x200) {
-    if (!gm_pedal) {
-      tx = 0;
-    } else if (!current_controls_allowed || !longitudinal_allowed) {
-      if ((GET_BYTE(to_send, 0) != 0U) || (GET_BYTE(to_send, 1) != 0U) || (GET_BYTE(to_send, 2) != 0U) || (GET_BYTE(to_send, 3) != 0U)) {
-        tx = 0;
-      }
-    } else {
-      // allowed: the pedal's own checksum/counter guard the command
-    }
-  }
-
-  // BUTTONS: only cruise cancellation with stock longitudinal (camera harness)
-  if ((addr == 481) && (gm_hw == GM_CAM)) {
-    int button = (GET_BYTE(to_send, 5) >> 4) & 0x7U;
-    bool allowed_cancel = (button == GM_BTN_CANCEL) && cruise_engaged_prev;
-    if (!allowed_cancel) {
-      tx = 0;
-    }
-  }
-
   // 1 allows the message through
   return tx;
 }
 
-static int gm_fwd_hook(int bus_num, CANPacket_t *to_fwd) {
-  int bus_fwd = -1;
-  int addr = GET_ADDR(to_fwd);
-
-  if (gm_hw == GM_CAM) {
-    if (bus_num == 0) {
-      // block PSCMStatus; openpilot forwards it with the hands-off detection set, hiding the camera's alert
-      bool is_pscm_msg = (addr == 388) && !gm_cc_only;
-      if (!is_pscm_msg) {
-        bus_fwd = 2;
-      }
-    }
-
-    if (bus_num == 2) {
-      // block lkas message, forward all others
-      bool is_lkas_msg = (addr == 384);
-      if (!is_lkas_msg) {
-        bus_fwd = 0;
-      }
-    }
-  }
-
-  return bus_fwd;
-}
-
 static const addr_checks* gm_init(int16_t param) {
-  gm_hw = GET_FLAG(param, GM_PARAM_HW_CAM) ? GM_CAM : GM_ASCM;
-  gm_cc_only = (gm_hw == GM_CAM) && GET_FLAG(param, GM_PARAM_CC_ONLY);
-  gm_pedal = gm_cc_only && GET_FLAG(param, GM_PARAM_PEDAL);
-  // StarPilot GM_BOLT_2017_STEERING_LIMITS: only for the Bolt EV without ACC (camera harness, CC only)
-  const bool bolt_2017 = gm_cc_only && GET_FLAG(param, GM_PARAM_BOLT_2017);
-  gm_max_steer = bolt_2017 ? 450 : GM_MAX_STEER;
-  gm_max_rate_up = bolt_2017 ? 15 : GM_MAX_RATE_UP;
-  gm_max_rate_down = bolt_2017 ? 34 : GM_MAX_RATE_DOWN;
-  gm_driver_torque_allowance = bolt_2017 ? 78 : GM_DRIVER_TORQUE_ALLOWANCE;
-  gm_driver_torque_factor = bolt_2017 ? 6 : GM_DRIVER_TORQUE_FACTOR;
-  gm_max_rt_delta = bolt_2017 ? 345 : GM_MAX_RT_DELTA;
-  gm_cruise_button_prev = 0;
+  UNUSED(param);
   controls_allowed = false;
   relay_malfunction_reset();
   return &gm_rx_checks;
@@ -343,5 +231,5 @@ const safety_hooks gm_hooks = {
   .rx = gm_rx_hook,
   .tx = gm_tx_hook,
   .tx_lin = nooutput_tx_lin_hook,
-  .fwd = gm_fwd_hook,
+  .fwd = default_fwd_hook,
 };

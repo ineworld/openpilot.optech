@@ -26,11 +26,8 @@ void uno_enable_can_transceiver(uint8_t transceiver, bool enabled) {
 
 void uno_enable_can_transceivers(bool enabled) {
   for(uint8_t i=1U; i<=4U; i++){
-    // Leave main CAN always on for CAN-based ignition detection.
-    // optech: this panda keeps the harness relay on when openpilot is not in control (comma turns it off), so the
-    // camera-side transceiver must stay on too, or the stock camera is cut off from the car while the device sleeps
-    // (GM Bolt EUV: camera warning on the cluster until ignition is seen). Transceivers 1 and 3 are the two relay sides.
-    if((i == 1U) || (i == 3U)){
+    // Leave main CAN always on for CAN-based ignition detection
+    if((car_harness_status == HARNESS_STATUS_FLIPPED) ? (i == 3U) : (i == 1U)){
       uno_enable_can_transceiver(i, true);
     } else {
       uno_enable_can_transceiver(i, enabled);
