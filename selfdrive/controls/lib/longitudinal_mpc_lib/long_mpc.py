@@ -233,6 +233,8 @@ class LongitudinalMpc:
     self.trafficStopAccel = 1.
     self.trafficStopModelSpeed = True
     self.trafficStopMode = int(Params().get("TrafficStopMode", encoding="utf8") or 0)
+    self.trafficGreenDelay = float(int(Params().get("TrafficStopGreenDelay", encoding="utf8") or 5)) * 0.1
+    self.greenStartCount = 0
     self.softHoldMode = 1
     self.tFollowSpeedRatio = 1.2
     self.tFollowGap1 = 1.1
@@ -294,6 +296,7 @@ class LongitudinalMpc:
     self.xState = XState.cruise
     self.startSignCount = 0
     self.stopSignCount = 0
+    self.greenStartCount = 0
 
     for i in range(N+1):
       self.solver.set(i, 'x', np.zeros(X_DIM))
@@ -585,6 +588,7 @@ class LongitudinalMpc:
     elif self.lo_timer == 80:
       self.trafficStopModelSpeed = Params().get_bool("TrafficStopModelSpeed")
       self.trafficStopMode = int(Params().get("TrafficStopMode", encoding="utf8"))
+      self.trafficGreenDelay = float(int(Params().get("TrafficStopGreenDelay", encoding="utf8") or 5)) * 0.1
       self.stopDistance = float(int(Params().get("StopDistance", encoding="utf8"))) / 100.
     elif self.lo_timer == 100:
       self.tFollowSpeedRatio = float(int(Params().get("TFollowSpeedRatio", encoding="utf8"))) / 100.
@@ -732,6 +736,9 @@ class LongitudinalMpc:
     else:
       self.softHoldTimer = 0
 
+    if self.xState != XState.e2eStop or v_ego >= 0.1 or carstate.gasPressed:
+      self.greenStartCount = 0
+
     ## 소프트홀드중
     if self.xState == XState.softHold:
       stop_x = 0.0
@@ -769,10 +776,16 @@ class LongitudinalMpc:
       #      self.mpcEvent = EventName.trafficSignGreen
       else:
         if v_ego < 0.1:
-          if self.trafficState == 2  and (not self.trafficError or (self.trafficError and cruiseButtonCounterDiff > 0)):
+          if self.trafficState == 2:
+            self.greenStartCount += 1
+          else:
+            self.greenStartCount = 0
+          green_ready = (self.greenStartCount * DT_MDL + 1e-6) >= self.trafficGreenDelay
+          if self.trafficState == 2 and ((not self.trafficError and green_ready) or cruiseButtonCounterDiff > 0):
               self.xState = XState.e2eCruisePrepare
               self.e2eCruiseCount = 3 * DT_MDL
               self.mpcEvent = EventName.trafficSignGreen
+              self.greenStartCount = 0
           else:
             if self.trafficState == 2 and self.trafficError:
               self.mpcEvent = EventName.trafficSignChanged
