@@ -1,4 +1,4 @@
-﻿#include "selfdrive/ui/paint.h"
+#include "selfdrive/ui/paint.h"
 
 #include <algorithm>
 #include <cassert>
@@ -1092,9 +1092,9 @@ static void drawOptechHud(const UIState* s) {
     const int cam_limit = (limit_speed > 0 && !bump) ? limit_speed : 0;
     const int road_limit = (roadLimitSpeed > 0 && roadLimitSpeed < 200) ? roadLimitSpeed : 0;
 
-    // ======================= top left =======================
+    // ======================= bottom left =======================
     const float lx = 30;
-    float ry = 20;  // badge row top (badges are 54 high)
+    float ry = s->fb_h - 20 - 54;  // badge row top (badges are 54 high, at bottom)
     float bx = lx;
     nvgFontFace(s->vg, BOLD);
     // (no time / date in this HUD: user 2026-11-23)
@@ -1104,67 +1104,56 @@ static void drawOptechHud(const UIState* s) {
         const int hda_limit = car_state.getSpeedLimit(), hda_dist = car_state.getSpeedLimitDistance();
         const int naviCluster = (int)car_params.getNaviCluster();
         const bool radar_tracks = s->radar_tracks;
-        if (sccBus == 2) { ui_draw_image(s, {(int)bx, (int)ry, 120, 54}, "ic_scc2", 1.0f); bx += 135; }
+        if (sccBus == 2) { ui_draw_image(s, {(int)bx, (int)ry, 120, 54}, "ic_scc2", 1.0f); bx += 130; }
         const char* nav = activeNDA >= 200 ? "ic_apn" : (hda_limit > 0 && hda_dist > 0) ? "ic_hda" : activeNDA >= 100 ? "ic_apm"
                         : activeNDA % 100 > 0 ? "ic_nda" : naviCluster > 0 ? "ic_hda" : nullptr;
-        if (nav) { ui_draw_image(s, {(int)bx, (int)ry, 120, 54}, nav, 1.0f); bx += 135; }
-        if (radar_tracks) { ui_draw_image(s, {(int)bx, (int)ry, 240, 54}, "ic_radartracks", 1.0f); bx += 255; }
+        if (nav) { ui_draw_image(s, {(int)bx, (int)ry, 120, 54}, nav, 1.0f); bx += 130; }
+        if (radar_tracks) { ui_draw_image(s, {(int)bx, (int)ry, 240, 54}, "ic_radartracks", 1.0f); bx += 250; }
     }
     g_gps_x = bx;  // ui_draw_gps_info draws the GPS bars + text right after
 
-    // 3) road limit + camera / bump sign (second row, only with navigation data). Every left item is CW wide and
-    //    the two signs sit in equal cells, so the column lines up (user: the left side looked untidy)
+    // 5) following distance + gear in one box (above badges row)
     const float CW = 340, cellw = (CW - 20) / 2, sg = 124;  // column width, sign cell width, sign size (both signs)
     const float pill_h = 56;  // "550m 남음" box height
     const NVGcolor label_c = nvgRGBA(211, 209, 199, 255);
-    float y2 = ry + 54 + 18;
-    const bool sign_row = road_limit > 0 || limit_speed > 0;
-    if (sign_row) {
-        if (road_limit > 0) {
-            const float ccx = lx + cellw / 2, cy = y2 + 50 + sg / 2, d = sg + 8;  // as big as the camera sign + outline
-            optech_text(s, ccx, y2 + 32, "도로 제한", 32, label_c, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            nvgBeginPath(s->vg); nvgCircle(s->vg, ccx, cy, d / 2); nvgFillColor(s->vg, nvgRGBA(226, 75, 74, 255)); nvgFill(s->vg);
-            nvgBeginPath(s->vg); nvgCircle(s->vg, ccx, cy, d / 2 - 14); nvgFillColor(s->vg, COLOR_WHITE); nvgFill(s->vg);
-            snprintf(str, sizeof(str), "%d", metric ? road_limit : (int)(road_limit * KM_TO_MILE + 0.5));
-            optech_text(s, ccx, cy + 0.36f * 64 - 6, str, 64, nvgRGBA(44, 44, 42, 255), NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
+    const float gap_h = 96, gap_top = ry - 14 - gap_h;
+    {
+        const float w = CW, h = gap_h, top = gap_top;
+        carrot_round_box(s, lx, top, w, h, nvgRGBA(0, 0, 0, 90), nvgRGBA(136, 135, 128, 255), 14, 2);
+        // stock SCC: the car's own gap setting (SCC11 TauGapSet); openpilot long: openpilot's gap
+        const int gap = car_params.getOpenpilotLongitudinalControl() ? (int)controls_state.getLongCruiseGap()
+                                                                     : (int)car_state.getCruiseGap();
+        const float gl = lx + 20, gr = lx + 214;  // left part
+        optech_text_vc(s, gl, top + 30, "차간 거리", 30, label_c, NVG_ALIGN_LEFT);  // the lit steps show the setting
+        const float sgap = 8, segw = (gr - gl - 3 * sgap) / 4, segh = 24, segy = top + 55;
+        for (int i = 0; i < 4; i++) {
+            nvgBeginPath(s->vg);
+            nvgRoundedRect(s->vg, gl + i * (segw + sgap), segy, segw, segh, 6);
+            nvgFillColor(s->vg, i < gap ? nvgRGBA(151, 196, 89, 255) : nvgRGBA(255, 255, 255, 45));
+            nvgFill(s->vg);
         }
-        if (limit_speed > 0) {
-            const float cellx = lx + cellw + 20, ccx = cellx + cellw / 2, top = y2 + 50, sx = ccx - sg / 2;
-            optech_text(s, ccx, y2 + 32, bump ? "방지턱" : section ? "구간 단속" : "단속 속도", 32, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            if (bump) {
-                ui_draw_image(s, {(int)sx, (int)top, (int)sg, (int)sg}, "ic_speed_bump", 1.0f);
-            } else {
-                carrot_round_box(s, sx, top, sg, sg, nvgRGBA(250, 199, 117, 255), nvgRGBA(44, 44, 42, 255), 14, 5);
-                nvgBeginPath(s->vg); nvgRoundedRect(s->vg, sx - 4, top - 4, sg + 8, sg + 8, 17);
-                nvgStrokeColor(s->vg, COLOR_WHITE); nvgStrokeWidth(s->vg, 3); nvgStroke(s->vg);
-                snprintf(str, sizeof(str), "%d", metric ? limit_speed : (int)(limit_speed * KM_TO_MILE + 0.5));
-                optech_text(s, ccx, top + sg / 2 + 0.36f * 68 - 6, str, 68, nvgRGBA(44, 44, 42, 255), NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
-                optech_camera_icon(s, sx + sg - 20, top + 20, 15);  // small, inside the sign's top right corner
-            }
-            if (left_dist > 0) {
-                optech_dist_text(str, sizeof(str), left_dist, " 남음");
-                // whole cell wide (its right edge lines up with the set speed box), text as big as fits
-                // (user 2026-11-23: it was too small)
-                const float bw = cellw, bh = pill_h, btop = top + sg + 12;
-                const float a = std::clamp((600.f - left_dist) / 600.f, 0.25f, 1.f);  // fills redder as it gets close
-                carrot_round_box(s, ccx - bw / 2, btop, bw, bh, nvgRGBA(226, 75, 74, (int)(255 * a)), COLOR_WHITE, 12, 3);
-                float fs = 36, tb[4];
-                nvgFontFace(s->vg, BOLD);
-                nvgFontSize(s->vg, fs);
-                nvgTextBounds(s->vg, 0, 0, str, NULL, tb);
-                const float maxw = bw - 16;
-                if (tb[2] - tb[0] > maxw) fs *= maxw / (tb[2] - tb[0]);
-                optech_text(s, ccx, btop + bh / 2 - fs * 0.2f, str, fs, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            }
-        }
+        // divider
+        nvgBeginPath(s->vg);
+        nvgMoveTo(s->vg, lx + 234, top + 16); nvgLineTo(s->vg, lx + 234, top + h - 16);
+        nvgStrokeColor(s->vg, nvgRGBA(136, 135, 128, 255)); nvgStrokeWidth(s->vg, 2); nvgStroke(s->vg);
+        // gear tile
+        const auto gear = car_state.getGearShifter();
+        NVGcolor gfill = nvgRGBA(95, 94, 90, 255);
+        if (gear == cereal::CarState::GearShifter::DRIVE || gear == cereal::CarState::GearShifter::SPORT ||
+            gear == cereal::CarState::GearShifter::LOW || gear == cereal::CarState::GearShifter::ECO) gfill = nvgRGBA(59, 109, 17, 255);
+        else if (gear == cereal::CarState::GearShifter::REVERSE) gfill = nvgRGBA(226, 75, 74, 255);
+        else if (gear == cereal::CarState::GearShifter::NEUTRAL) gfill = nvgRGBA(186, 117, 23, 255);
+        const float ts = 68, tcx = (lx + 234 + lx + w) / 2, tcy = top + h / 2;
+        carrot_round_box(s, tcx - ts / 2, tcy - ts / 2, ts, ts, gfill, COLOR_WHITE, 12, 3);
+        optech_text_vc(s, tcx, tcy, carrot_gear_text(gear), 54, COLOR_WHITE, NVG_ALIGN_CENTER);
     }
 
-    // 4) set speed box (moves up when there is no navigation sign row)
+    // 4) set speed box (anchored above Gap + Gear regardless of sign_row)
     const float applyMaxSpeed = controls_state.getVCruiseOut();
     const float cruiseMaxSpeed = controls_state.getVCruiseCluster();
-    float y3 = sign_row ? y2 + 50 + sg + 12 + pill_h + 18 : y2;
+    const float set_h = 124, y3 = gap_top - 14 - set_h;
     {
-        const float w = CW, h = 124;
+        const float w = CW, h = set_h;
         NVGcolor fill = nvgRGBA(95, 94, 90, 230), line = nvgRGBA(136, 135, 128, 255);
         NVGcolor txt = COLOR_WHITE;
         bool draw = true;
@@ -1195,40 +1184,50 @@ static void drawOptechHud(const UIState* s) {
         }
     }
 
-    // 5) following distance + gear in one box (user 2026-11-23): left "차간 거리" with 4 steps like the car's
-    //    cluster, right the gear letter on a coloured tile (D green, R red, N amber, P grey)
-    {
-        const float w = CW, h = 96, top = y3 + 124 + 14;
-        carrot_round_box(s, lx, top, w, h, nvgRGBA(0, 0, 0, 90), nvgRGBA(136, 135, 128, 255), 14, 2);
-        // stock SCC: the car's own gap setting (SCC11 TauGapSet); openpilot long: openpilot's gap
-        const int gap = car_params.getOpenpilotLongitudinalControl() ? (int)controls_state.getLongCruiseGap()
-                                                                     : (int)car_state.getCruiseGap();
-        const float gl = lx + 20, gr = lx + 214;  // left part
-        optech_text_vc(s, gl, top + 30, "차간 거리", 30, label_c, NVG_ALIGN_LEFT);  // the lit steps show the setting
-        const float sgap = 8, segw = (gr - gl - 3 * sgap) / 4, segh = 24, segy = top + 55;
-        for (int i = 0; i < 4; i++) {
-            nvgBeginPath(s->vg);
-            nvgRoundedRect(s->vg, gl + i * (segw + sgap), segy, segw, segh, 6);
-            nvgFillColor(s->vg, i < gap ? nvgRGBA(151, 196, 89, 255) : nvgRGBA(255, 255, 255, 45));
-            nvgFill(s->vg);
+    // 3) road limit + camera / bump sign (above set speed box, only with navigation data)
+    const float sign_h = 50 + sg + 12 + pill_h;
+    const float y2 = y3 - 18 - sign_h;
+    const bool sign_row = road_limit > 0 || limit_speed > 0;
+    if (sign_row) {
+        if (road_limit > 0) {
+            const float ccx = lx + cellw / 2, cy = y2 + 50 + sg / 2, d = sg + 8;  // as big as the camera sign + outline
+            optech_text(s, ccx, y2 + 32, "도로 제한", 32, label_c, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            nvgBeginPath(s->vg); nvgCircle(s->vg, ccx, cy, d / 2); nvgFillColor(s->vg, nvgRGBA(226, 75, 74, 255)); nvgFill(s->vg);
+            nvgBeginPath(s->vg); nvgCircle(s->vg, ccx, cy, d / 2 - 14); nvgFillColor(s->vg, COLOR_WHITE); nvgFill(s->vg);
+            snprintf(str, sizeof(str), "%d", metric ? road_limit : (int)(road_limit * KM_TO_MILE + 0.5));
+            optech_text(s, ccx, cy + 0.36f * 64 - 6, str, 64, nvgRGBA(44, 44, 42, 255), NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
         }
-        // divider
-        nvgBeginPath(s->vg);
-        nvgMoveTo(s->vg, lx + 234, top + 16); nvgLineTo(s->vg, lx + 234, top + h - 16);
-        nvgStrokeColor(s->vg, nvgRGBA(136, 135, 128, 255)); nvgStrokeWidth(s->vg, 2); nvgStroke(s->vg);
-        // gear tile
-        const auto gear = car_state.getGearShifter();
-        NVGcolor gfill = nvgRGBA(95, 94, 90, 255);
-        if (gear == cereal::CarState::GearShifter::DRIVE || gear == cereal::CarState::GearShifter::SPORT ||
-            gear == cereal::CarState::GearShifter::LOW || gear == cereal::CarState::GearShifter::ECO) gfill = nvgRGBA(59, 109, 17, 255);
-        else if (gear == cereal::CarState::GearShifter::REVERSE) gfill = nvgRGBA(226, 75, 74, 255);
-        else if (gear == cereal::CarState::GearShifter::NEUTRAL) gfill = nvgRGBA(186, 117, 23, 255);
-        const float ts = 68, tcx = (lx + 234 + lx + w) / 2, tcy = top + h / 2;
-        carrot_round_box(s, tcx - ts / 2, tcy - ts / 2, ts, ts, gfill, COLOR_WHITE, 12, 3);
-        optech_text_vc(s, tcx, tcy, carrot_gear_text(gear), 54, COLOR_WHITE, NVG_ALIGN_CENTER);
+        if (limit_speed > 0) {
+            const float cellx = lx + cellw + 20, ccx = cellx + cellw / 2, top = y2 + 50, sx = ccx - sg / 2;
+            optech_text(s, ccx, y2 + 32, bump ? "방지턱" : section ? "구간 단속" : "단속 속도", 32, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            if (bump) {
+                ui_draw_image(s, {(int)sx, (int)top, (int)sg, (int)sg}, "ic_speed_bump", 1.0f);
+            } else {
+                carrot_round_box(s, sx, top, sg, sg, nvgRGBA(250, 199, 117, 255), nvgRGBA(44, 44, 42, 255), 14, 5);
+                nvgBeginPath(s->vg); nvgRoundedRect(s->vg, sx - 4, top - 4, sg + 8, sg + 8, 17);
+                nvgStrokeColor(s->vg, COLOR_WHITE); nvgStrokeWidth(s->vg, 3); nvgStroke(s->vg);
+                snprintf(str, sizeof(str), "%d", metric ? limit_speed : (int)(limit_speed * KM_TO_MILE + 0.5));
+                optech_text(s, ccx, top + sg / 2 + 0.36f * 68 - 6, str, 68, nvgRGBA(44, 44, 42, 255), NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
+                optech_camera_icon(s, sx + sg - 20, top + 20, 15);  // small, inside the sign's top right corner
+            }
+            if (left_dist > 0) {
+                optech_dist_text(str, sizeof(str), left_dist, " 남음");
+                // whole cell wide (its right edge lines up with the set speed box), text as big as fits
+                const float bw = cellw, bh = pill_h, btop = top + sg + 12;
+                const float a = std::clamp((600.f - left_dist) / 600.f, 0.25f, 1.f);  // fills redder as it gets close
+                carrot_round_box(s, ccx - bw / 2, btop, bw, bh, nvgRGBA(226, 75, 74, (int)(255 * a)), COLOR_WHITE, 12, 3);
+                float fs = 36, tb[4];
+                nvgFontFace(s->vg, BOLD);
+                nvgFontSize(s->vg, fs);
+                nvgTextBounds(s->vg, 0, 0, str, NULL, tb);
+                const float maxw = bw - 16;
+                if (tb[2] - tb[0] > maxw) fs *= maxw / (tb[2] - tb[0]);
+                optech_text(s, ccx, btop + bh / 2 - fs * 0.2f, str, fs, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            }
+        }
     }
 
-    // ======================= top centre =======================
+    // ======================= bottom centre =======================
     const float cx = s->fb_w / 2.f;
     {
         // big speed: white steady, red braking / slowing, green speeding up
@@ -1237,7 +1236,7 @@ static void drawOptechHud(const UIState* s) {
         if (car_state.getBrakePressed() || a < -0.3f) c = nvgRGBA(240, 149, 149, 255);
         else if (a > 0.3f) c = nvgRGBA(151, 196, 89, 255);
         snprintf(str, sizeof(str), "%.0f", cur_speed);
-        optech_text(s, cx, 190, str, 190, c, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+        optech_text(s, cx, s->fb_h - 66, str, 175, c, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
         // unit + GPS speed (green; the dashboard speed reads a few % high) as one line centred under the number
         const char* unit_str = metric ? "km/h" : "mph";  // like OPKR
         const bool gps_ok = sm.alive("gpsLocationExternal") && (sm["gpsLocationExternal"].getGpsLocationExternal().getFlags() & 1);
@@ -1249,73 +1248,83 @@ static void drawOptechHud(const UIState* s) {
         nvgTextBounds(s->vg, 0, 0, unit_str, NULL, ub);
         nvgTextBounds(s->vg, 0, 0, str, NULL, gb);
         const float uw = ub[2] - ub[0], gw = gb[2] - gb[0], sp = 24, x0 = cx - (uw + sp + gw) / 2;
-        optech_text(s, x0, 236, unit_str, 40, nvgRGBA(211, 209, 199, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        optech_text(s, x0 + uw + sp, 236, str, 40, gps_ok ? nvgRGBA(151, 196, 89, 255) : nvgRGBA(136, 135, 128, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+        optech_text(s, x0, s->fb_h - 22, unit_str, 40, nvgRGBA(211, 209, 199, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+        optech_text(s, x0 + uw + sp, s->fb_h - 22, str, 40, gps_ok ? nvgRGBA(151, 196, 89, 255) : nvgRGBA(136, 135, 128, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
     }
     {
-        // traffic light (the driving model's stop / go guess, controls/lib/optech_signal.py): horizontal
-        // red / yellow / green, right under the unit + GPS line (user 2026-11-23). Shown whenever it has something,
-        // also without openpilot's speed control (display only, like carrot's signal modes)
-        const int ts = lp.getTrafficState() % 1000;
-        const int mode = ts >= 100 ? 3 : (ts % 100);
-        if (mode >= 1 && mode <= 3) {
-            const float w = 264, h = 88, x = cx - w / 2, y = 250, r = 31;
-            carrot_round_box(s, x, y, w, h, nvgRGBA(44, 44, 42, 240), COLOR_WHITE, 14, 3);
+        // turn signal arrows beside the big speed (OPKR style, three lighting up one after another)
+        const bool lb = car_state.getLeftBlinker(), rb = car_state.getRightBlinker();
+        if (lb || rb) {
+            const int step = (sm.frame / 4) % 4;  // 0..3
+            const float w = 56, h = 104, gap = 42, y = s->fb_h - 184;
+            for (int i = 0; i < 3; i++) {
+                const int a = (step > i) ? 255 : 70;
+                const NVGcolor col = nvgRGBA(239, 159, 39, a);
+                if (lb) optech_chevron(s, cx - 200 - i * gap - w, y, w, h, false, col);
+                if (rb) optech_chevron(s, cx + 200 + i * gap, y, w, h, true, col);
+            }
+        }
+    }
+    // traffic light + navigation turn guidance on one shared horizontal row above the big speed
+    const int tl_ts = lp.getTrafficState() % 1000;
+    const int tl_mode = tl_ts >= 100 ? 3 : (tl_ts % 100);
+    const bool has_tl = tl_mode >= 1 && tl_mode <= 3;
+
+    const int turn = road.getXTurnInfo();
+    int turn_arrow = 0;
+    const char* turn_label = nullptr;
+    if (turn > 0 && activeNDA > 0) {
+        switch (turn) {
+        case 1: turn_arrow = 1; turn_label = "좌회전"; break;
+        case 2: turn_arrow = 2; turn_label = "우회전"; break;
+        case 3: turn_arrow = 3; turn_label = "왼쪽 차로"; break;
+        case 4: turn_arrow = 4; turn_label = "오른쪽 차로"; break;
+        case 5: turn_arrow = 5; turn_label = "U턴"; break;
+        case 35: turn_label = "좌측 고가 진입"; break;
+        case 43: turn_label = "지하차도 우측"; break;
+        case 48: turn_label = "휴게소"; break;
+        default: break;
+        }
+    }
+    const bool has_turn = turn_label != nullptr;
+    {
+        const float row_y = s->fb_h - 294;
+        const float tl_w = 248, tl_h = 80, tl_r = 28;
+        float turn_w = 0, turn_iw = 0;
+        const float turn_h = 80, S = 64;
+        char turn_str[128] = "";
+        if (has_turn) {
+            const int dist = road.getXDistToTurn();
+            if (dist > 0) { char d[32]; optech_dist_text(d, sizeof(d), dist, ""); snprintf(turn_str, sizeof(turn_str), "%s %s", turn_label, d); }
+            else snprintf(turn_str, sizeof(turn_str), "%s", turn_label);
+            nvgFontFace(s->vg, BOLD);
+            nvgFontSize(s->vg, 44);
+            float b[4]; nvgTextBounds(s->vg, 0, 0, turn_str, NULL, b);
+            turn_iw = turn_arrow ? S + 16 : 0;
+            turn_w = (b[2] - b[0]) + turn_iw + 44;
+        }
+        float tl_x = cx - tl_w / 2, turn_x = cx - turn_w / 2;
+        if (has_tl && has_turn) {
+            const float row_gap = 18, total_w = tl_w + row_gap + turn_w;
+            tl_x = cx - total_w / 2;
+            turn_x = tl_x + tl_w + row_gap;
+        }
+        if (has_tl) {
+            carrot_round_box(s, tl_x, row_y, tl_w, tl_h, nvgRGBA(44, 44, 42, 240), COLOR_WHITE, 14, 3);
             const NVGcolor off = nvgRGBA(95, 94, 90, 255);
             const NVGcolor on[3] = {nvgRGBA(226, 75, 74, 255), nvgRGBA(239, 159, 39, 255), nvgRGBA(99, 153, 34, 255)};
-            const int lit = mode == 1 ? 0 : mode == 3 ? 1 : 2;  // 1 red, 3 yellow, 2 green
+            const int lit = tl_mode == 1 ? 0 : tl_mode == 3 ? 1 : 2;  // 1 red, 3 yellow, 2 green
             for (int i = 0; i < 3; i++) {
                 nvgBeginPath(s->vg);
-                nvgCircle(s->vg, x + w / 2 + (i - 1) * 82, y + h / 2, r);
+                nvgCircle(s->vg, tl_x + tl_w / 2 + (i - 1) * 78, row_y + tl_h / 2, tl_r);
                 nvgFillColor(s->vg, i == lit ? on[i] : off);
                 nvgFill(s->vg);
             }
         }
-    }
-    {
-        // turn signal arrows outside the traffic light (OPKR style, three lighting up one after another)
-        const bool lb = car_state.getLeftBlinker(), rb = car_state.getRightBlinker();
-        if (lb || rb) {
-            const int step = (sm.frame / 4) % 4;  // 0..3
-            const float w = 60, h = 110, gap = 44, y = 84;
-            for (int i = 0; i < 3; i++) {
-                const int a = (step > i) ? 255 : 70;
-                const NVGcolor col = nvgRGBA(239, 159, 39, a);
-                if (lb) optech_chevron(s, cx - 270 - i * gap - w, y, w, h, false, col);
-                if (rb) optech_chevron(s, cx + 270 + i * gap, y, w, h, true, col);
-            }
-        }
-    }
-    {
-        // navigation turn guidance right under the speed
-        const int turn = road.getXTurnInfo();
-        if (turn > 0 && activeNDA > 0) {
-            int arrow = 0;
-            const char* label = nullptr;
-            switch (turn) {
-            case 1: arrow = 1; label = "좌회전"; break;
-            case 2: arrow = 2; label = "우회전"; break;
-            case 3: arrow = 3; label = "왼쪽 차로"; break;
-            case 4: arrow = 4; label = "오른쪽 차로"; break;
-            case 5: arrow = 5; label = "U턴"; break;
-            case 35: label = "좌측 고가 진입"; break;
-            case 43: label = "지하차도 우측"; break;
-            case 48: label = "휴게소"; break;
-            default: break;
-            }
-            if (label) {
-                const int dist = road.getXDistToTurn();
-                if (dist > 0) { char d[32]; optech_dist_text(d, sizeof(d), dist, ""); snprintf(str, sizeof(str), "%s %s", label, d); }
-                else snprintf(str, sizeof(str), "%s", label);
-                nvgFontFace(s->vg, BOLD);
-                nvgFontSize(s->vg, 48);
-                float b[4]; nvgTextBounds(s->vg, 0, 0, str, NULL, b);
-                const float S = 72;  // arrow size
-                const float tw = b[2] - b[0], iw = arrow ? S + 18 : 0, w = tw + iw + 50, h = 96, x = cx - w / 2, y = 352;  // under the traffic light
-                carrot_round_box(s, x, y, w, h, nvgRGBA(0, 0, 0, 120), nvgRGBA(0, 0, 0, 0), 12, 0);
-                if (arrow) optech_turn_arrow(s, x + 22, y + (h - S) / 2, S, arrow);
-                optech_text(s, x + 25 + iw, y + h / 2 + 2, str, 48, COLOR_WHITE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            }
+        if (has_turn) {
+            carrot_round_box(s, turn_x, row_y, turn_w, turn_h, nvgRGBA(0, 0, 0, 120), nvgRGBA(0, 0, 0, 0), 12, 0);
+            if (turn_arrow) optech_turn_arrow(s, turn_x + 20, row_y + (turn_h - S) / 2, S, turn_arrow);
+            optech_text(s, turn_x + 22 + turn_iw, row_y + turn_h / 2 + 2, turn_str, 44, COLOR_WHITE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         }
     }
 
@@ -1323,21 +1332,24 @@ static void drawOptechHud(const UIState* s) {
     {
         const auto lead = sm["radarState"].getRadarState().getLeadOne();
         if (lead.getStatus()) {
+            const float d = lead.getDRel(), vl = std::max(0.f, lead.getVLead() * unit), ve = car_state.getVEgo();
+            const bool gap_ok = ve > 1.0f;
+            const float lh = gap_ok ? 150.f : 104.f;
+            const float bottom_hud_top = (has_tl || has_turn) ? (s->fb_h - 294.f) : (s->fb_h - 196.f);
+            const float max_lead_y = std::max(300.f, bottom_hud_top - 10.f - 44.f - lh);
             const QPointF& v = scene.lead_vertices[0];
             const float x = std::clamp((float)v.x(), 300.f, s->fb_w - 300.f);
-            const float y = std::clamp((float)v.y(), 300.f, s->fb_h - 230.f);
+            const float y = std::clamp((float)v.y(), 300.f, max_lead_y);
             nvgBeginPath(s->vg);
             nvgMoveTo(s->vg, x, y - 6); nvgLineTo(s->vg, x + 28, y + 36); nvgLineTo(s->vg, x - 28, y + 36); nvgClosePath(s->vg);
             nvgFillColor(s->vg, nvgRGBA(239, 159, 39, 255)); nvgFill(s->vg);
-            const float d = lead.getDRel(), vl = std::max(0.f, lead.getVLead() * unit), ve = car_state.getVEgo();
             char l1[32], l2[32], l3[32];
             snprintf(l1, sizeof(l1), "%s %.0fm", "거리", d);
             snprintf(l2, sizeof(l2), "%s %.0f%s", "앞차", vl, metric ? "km/h" : "mph");
-            const bool gap_ok = ve > 1.0f;
             const float tgap = gap_ok ? d / ve : 0.f;
             snprintf(l3, sizeof(l3), "%s %.1f%s", "도달", tgap, "초");
-            const float w = 250, h = gap_ok ? 150 : 104, top = y + 44;
-            carrot_round_box(s, x - w / 2, top, w, h, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0), 12, 0);
+            const float w = 250, top = y + 44;
+            carrot_round_box(s, x - w / 2, top, w, lh, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0), 12, 0);
             optech_text(s, x, top + 46, l1, 40, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             optech_text(s, x, top + 92, l2, 40, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
             if (gap_ok) {
@@ -1347,14 +1359,13 @@ static void drawOptechHud(const UIState* s) {
         }
     }
 
-    // ======================= right column =======================
+    // ======================= bottom-right column =======================
     {
-        // three boxes of the same size (user: make them even): wheel, CPU, tyres. Just big enough for what is inside
-        // (user 2026-11-23: the frames were too big)
+        // three boxes of the same size stacked up from the bottom right: wheel, CPU, tyres
         const QRect wr = optech_wheel_rect(s->fb_w, s->fb_h);
         const float colw = wr.width(), boxh = wr.height(), gap = 14, rx = wr.x(), rcx = rx + colw / 2;
         const NVGcolor box_fill = nvgRGBA(0, 0, 0, 100), box_line = nvgRGBA(180, 178, 169, 255), lab = nvgRGBA(211, 209, 199, 255);
-        float top = 20;
+        float top = wr.y();
         // steering wheel like OPKR: the comma wheel picture on a circle in the status colour, turning with the wheel.
         // Tap: path offset panel
         carrot_round_box(s, rx, top, colw, boxh, box_fill, box_line, 14, 3);
@@ -1362,7 +1373,7 @@ static void drawOptechHud(const UIState* s) {
         const NVGcolor wc = enabled ? nvgRGBA(sc.red(), sc.green(), sc.blue(), sc.alpha()) : nvgRGBA(0x17, 0x33, 0x49, 0xc8);
         ui_draw_circle_image_rotation(s, rcx, top + boxh / 2, 66, "wheel", wc, 1.0f, car_state.getSteeringAngleDeg());
 
-        // CPU temperature / CPU use (화면 탭 '기기 상태'; the tyre box moves up when it is hidden)
+        // CPU temperature / CPU use (화면 탭 '기기 상태'; the tyre box moves down when it is hidden)
         if (s->show_device_stat) {
         auto ds = sm["deviceState"].getDeviceState();
         float temp = 0.f; int use = 0;
@@ -1371,7 +1382,7 @@ static void drawOptechHud(const UIState* s) {
         if (std::size(tc) > 0) temp /= std::size(tc);
         for (int i = 0; i < (int)std::size(cu); i++) use += cu[i];
         if (std::size(cu) > 0) use /= (int)std::size(cu);
-        top += boxh + gap;
+        top -= boxh + gap;
         carrot_round_box(s, rx, top, colw, boxh, box_fill, box_line, 14, 3);
         optech_text_vc(s, rcx, top + 26, "CPU 온도", 30, lab, NVG_ALIGN_CENTER);
         snprintf(str, sizeof(str), "%.0f%s", temp, "°C");
@@ -1385,7 +1396,7 @@ static void drawOptechHud(const UIState* s) {
         if (s->show_tpms) {
             auto tpms = car_state.getTpms();
             const float t[4] = {tpms.getFl(), tpms.getFr(), tpms.getRl(), tpms.getRr()};
-            top += boxh + gap;
+            top -= boxh + gap;
             carrot_round_box(s, rx, top, colw, boxh, box_fill, box_line, 14, 3);
             optech_text_vc(s, rcx, top + 26, "공기압 psi", 30, lab, NVG_ALIGN_CENTER);
             for (int i = 0; i < 4; i++) {
@@ -2504,15 +2515,25 @@ static void ui_draw_gps_info(const UIState* s) {
 
     const int bars = gps_cno >= 35 ? 4 : gps_cno >= 30 ? 3 : gps_cno >= 25 ? 2 : gps_cno >= 20 ? 1 : 0;
     if (s->show_mode == 7) {
-        // optech HUD: a box as high as the APN badge beside it, styled like the other HUD boxes (user 2026-11-23:
-        // the loose bars + text sat off centre and looked untidy). Bars and text both centred in the box.
-        const float bx = g_gps_x, by0 = 20, bh = 54, cy = by0 + bh / 2, fs = 30;
+        // optech HUD: bottom-left row, right after the badges; shrink font only if needed so it never hits the centre speed
+        const float bx = g_gps_x, by0 = s->fb_h - 20 - 54, bh = 54, cy = by0 + bh / 2;
+        float fs = 30;
         const float bw = 8, gap = 4, barsw = 4 * bw + 3 * gap, maxbar = 30;
         nvgFontFace(s->vg, BOLD);
         nvgFontSize(s->vg, fs);
         float tb[4];
         nvgTextBounds(s->vg, 0, 0, str, NULL, tb);
-        const float w = 18 + barsw + 14 + (tb[2] - tb[0]) + 20;
+        const float max_w = (s->fb_w / 2.f - 150.f) - bx;
+        float w = 18 + barsw + 14 + (tb[2] - tb[0]) + 20;
+        if (max_w > 100.f && w > max_w) {
+            const float avail_tw = std::max(40.f, max_w - (18 + barsw + 14 + 20));
+            if (tb[2] - tb[0] > avail_tw) {
+                fs *= avail_tw / (tb[2] - tb[0]);
+                nvgFontSize(s->vg, fs);
+                nvgTextBounds(s->vg, 0, 0, str, NULL, tb);
+            }
+            w = 18 + barsw + 14 + (tb[2] - tb[0]) + 20;
+        }
         carrot_round_box(s, bx, by0, w, bh, nvgRGBA(0, 0, 0, 110), nvgRGBA(136, 135, 128, 255), 14, 2);
         const float bottom = cy + maxbar / 2;
         for (int i = 0; i < 4; i++) {
@@ -2551,8 +2572,9 @@ static void ui_draw_bsd_mark(const UIState* s, bool right, bool danger) {
     // rounded box with a car seen from the side and a warning triangle under it: yellow and steady while a car is
     // there, red and blinking with '왼쪽/오른쪽 차량 주의' once the turn signal is on towards it
     const float w = 140, h = 170;
-    const float x = right ? s->fb_w - w - 20 : 20;
-    const float y = s->fb_h * 0.60f;  // under the right column (wheel, CPU, tyres)
+    const float x = (s->show_mode == 7) ? (right ? s->fb_w - 30 - 160 - 20 - w : 30 + 340 + 20)
+                                        : (right ? s->fb_w - w - 20 : 20);
+    const float y = (s->show_mode == 7) ? (s->fb_h - 436.f) : (s->fb_h * 0.60f);
     const bool blink_on = (s->sm->frame % 12) < 7;
     if (danger && !blink_on) return;
 
@@ -2682,12 +2704,15 @@ void ui_draw_alert(UIState* s) {
     if (alert.size != cereal::ControlsState::AlertSize::NONE) {
         alert_color = COLOR_ORANGE;
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        ui_draw_text(s, s->fb_w / 2, s->fb_h - 300, alert.text1.toStdString().c_str(), 100, alert_color, BOLD, 3.0f, 8.0f);
-        ui_draw_text(s, s->fb_w / 2, s->fb_h - 200, alert.text2.toStdString().c_str(), 70, alert_color, BOLD, 3.0f, 8.0f);
+        const float y1 = (s->show_mode == 7) ? (s->fb_h - 460) : (s->fb_h - 300);
+        const float y2 = (s->show_mode == 7) ? (s->fb_h - 370) : (s->fb_h - 200);
+        const float y3 = (s->show_mode == 7) ? (s->fb_h - 305) : (s->fb_h - 120);
+        ui_draw_text(s, s->fb_w / 2, y1, alert.text1.toStdString().c_str(), 100, alert_color, BOLD, 3.0f, 8.0f);
+        ui_draw_text(s, s->fb_w / 2, y2, alert.text2.toStdString().c_str(), 70, alert_color, BOLD, 3.0f, 8.0f);
         // optech: a third line on 'take control' alerts saying what happens to openpilot
         const char* line3 = alert.type.contains("immediateDisable") ? "오픈파일럿이 꺼졌습니다"
                           : alert.type.contains("softDisable") ? "오픈파일럿이 곧 꺼집니다" : nullptr;
-        if (line3) ui_draw_text(s, s->fb_w / 2, s->fb_h - 120, line3, 52, alert_color, BOLD, 3.0f, 8.0f);
+        if (line3) ui_draw_text(s, s->fb_w / 2, y3, line3, 52, alert_color, BOLD, 3.0f, 8.0f);
     }
 }
 void ui_update_alert(const Alert& a, const QColor& color) {
