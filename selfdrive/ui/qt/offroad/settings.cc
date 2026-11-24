@@ -995,6 +995,10 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
     "앞차가 출발할 때도 울릴 수 있고, 늦거나 빠를 수 있으니 출발 전에는 꼭 신호를 직접 확인하세요. "
     "주행 화면의 신호등 표시도 같은 판단으로 켜집니다.", ROAD_ICON, this);
   cruiseToggles->addItem(green_alert);
+  cruiseToggles->addItem(new CValueControl("TrafficStopMode", "신호등 정지 (실험)",
+    "빨간불 앞에서 차가 스스로 멈추게 합니다. 실험 기능입니다. 0:사용 안 함, 1:기본, 2:출발 준비 중에만 모델 방식(blended), 3:앞차 시각 감지 시에도 모델 방식(blended)\n"
+    "신호등을 직접 보는 것이 아니라, 주행 모델이 멈출지 출발할지 예측한 것으로 판단합니다. 잘못 멈추거나 빨간불에 서지 않을 수 있으니 빨간불 앞에서는 직접 브레이크로 멈추세요. "
+    "초록불로 판단하면 자동으로 출발할 수 있으니, 정차 중에도 신호를 직접 확인하고 언제든 브레이크를 밟을 수 있게 준비하세요. 켜면 신호등 표시도 이 판단을 따릅니다.", ROAD_ICON, 0, 3, 1));
   // visibility only after addItem (a widget without a parent would open as its own window, see 카메라 감속 above)
   green_alert->setVisible(Params().getBool("OptechSignalEnable"));
   QObject::connect(signal_on, &ToggleControl::toggleFlipped, [=](bool on) { green_alert->setVisible(on); });

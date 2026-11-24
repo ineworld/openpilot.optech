@@ -247,7 +247,10 @@ def manager_init() -> None:
   # engage / disengage only by the driver's own button: automatic cruise ON/OFF from the gas pedal, brake
   # release, lead distance and auto engage are removed from the menu and forced off on every boot
   # KeepEngage too: leaving D (N / R) disengages, as in stock openpilot
-  for k in ("EnableAutoEngage", "CruiseOnDist", "AutoResumeFromGas", "AutoCancelFromGasMode", "KeepEngage", "TrafficStopMode", "CruiseControlMode", "DisengageOnAccelerator"):
+  # TrafficStopMode is deliberately NOT in the forced-off list below: the
+  # '신호등 정지 (실험)' toggle in settings.cc owns it. Default stays "0"
+  # (off) so the stop is opt-in; a user value must survive reboot.
+  for k in ("EnableAutoEngage", "CruiseOnDist", "AutoResumeFromGas", "AutoCancelFromGasMode", "KeepEngage", "CruiseControlMode", "DisengageOnAccelerator"):
     params.put(k, "0")
   # apilot's own brake release resume (AutoResumeFromBrakeRelease) is pinned off below and removed from the menu;
   # cruise_helper resumes at the set speed instead (EngageWithLong). These conditions stay pinned for its code path:

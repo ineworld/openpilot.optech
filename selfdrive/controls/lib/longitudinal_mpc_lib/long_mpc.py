@@ -232,7 +232,7 @@ class LongitudinalMpc:
     self.applyLongDynamicCost = False
     self.trafficStopAccel = 1.
     self.trafficStopModelSpeed = True
-    self.trafficStopMode = 1
+    self.trafficStopMode = int(Params().get("TrafficStopMode", encoding="utf8") or 0)
     self.softHoldMode = 1
     self.tFollowSpeedRatio = 1.2
     self.tFollowGap1 = 1.1
