@@ -64,7 +64,6 @@ def manager_init() -> None:
     ("ShowSteerMode", "2"),
     ("ShowDeviceState", "1"),
     ("ShowGpsInfo", "1"),
-    ("AutoShutdown", "1"),
     ("GpsSource", "1"),
     ("EngageWithLong", "1"),
     # Ray EV / Porter II EV (no SCC): each car its own settings page (start tab, shown when the car is chosen)
@@ -129,7 +128,7 @@ def manager_init() -> None:
     ("OptechSignalEnable", "1"),  # 주행 > 신호등 > 신호등 사용 (HUD traffic light + green light alert)
     ("OptechGreenAlert", "1"),   # 주행 > 신호등 > 초록불 알림 (StarPilot green light alert)
     ("OptechGasResume", "0"),    # 주행 > 브레이크 > 악셀로 다시 켜기 (off: the driver turns it on)
-    ("OptechOffShutdown", "0"),  # 고급 > 시동 끈 뒤 꺼짐 (seconds, 0 off)
+    ("OptechAutoShutdown", "1800"),  # 고급 > 자동 꺼짐 (seconds, 0 off; default 30 min)
     ("OptechSettingsTimeout", "180"),  # 화면 > 화면 유지 시간 (seconds, -1 항상)
     ("OptechDriveDim", "0"),  # 화면 > 주행 중 밝기 (%, 0 off)
     ("OptechShowRecordBtn", "0"),  # 화면 > 녹화 버튼 (0 hidden)

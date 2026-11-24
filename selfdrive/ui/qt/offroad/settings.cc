@@ -1187,28 +1187,27 @@ CarrotPanel::CarrotPanel(QWidget* parent) : QWidget(parent) {
   advancedToggles = new ListWidget(this);
   advancedToggles->addItem(carrot_section("기기"));
   advancedToggles->addItem(gps_btn);  // GPS 확인 (made with the 시작 items above)
-  // OptechOffShutdown (autoshutdownd): after a drive, turn the device off this long after the car is off (tester feedback)
+  // OptechAutoShutdown (autoshutdownd): shut down after N seconds with USB unplugged and not driving (0 = off, default 30 min)
   {
-    auto off_btn = new ButtonControl("", "선택",
-      "[기기 전원을 끄는 시간] 상시 전원(시동을 꺼도 전기가 계속 들어오는 곳)에 연결한 차량용입니다. "
-      "주행 후 시동을 끄고 고른 시간이 지나면 판다가 기기로 가는 전기를 끊어 기기가 꺼지고, 차 배터리를 아낍니다. "
-      "다음에 시동을 걸면 판다가 전기를 다시 보내 기기가 켜지도록 합니다. "
-      "시동을 끄면 전기도 끊기는 곳에 연결했다면 끔으로 두세요. 끔(처음 값): 꺼지지 않습니다. "
-      "기기를 켠 뒤 한 번도 시동을 걸지 않았으면 (집에서 업데이트·설정할 때) 꺼지지 않습니다.");
-    const QStringList off_names = {"끔", "30초", "1분", "3분", "5분", "10분"};
-    const QList<int> off_secs = {0, 30, 60, 180, 300, 600};
-    auto off_name = [=]() {
-      const int i = off_secs.indexOf(std::atoi(Params().get("OptechOffShutdown").c_str()));
-      return "시동 끈 뒤 꺼짐: " + off_names[i < 0 ? 0 : i];
+    auto shutdown_btn = new ButtonControl("", "선택",
+      "전원(USB)이 연결되어 있지 않고 주행 중이 아닐 때, 고른 시간이 지나면 기기가 스스로 꺼집니다. "
+      "전원이 연결되어 있거나 주행 중이면 꺼지지 않습니다. 끔: 자동으로 꺼지지 않습니다. (처음 값: 30분)");
+    const QStringList shutdown_names = {"끔", "10분", "30분", "1시간"};
+    const QList<int> shutdown_secs = {0, 600, 1800, 3600};
+    auto shutdown_name = [=]() {
+      const std::string v = Params().get("OptechAutoShutdown");
+      const int i = shutdown_secs.indexOf(v.empty() ? 1800 : std::atoi(v.c_str()));
+      return "자동 꺼짐: " + shutdown_names[i < 0 ? 2 : i];
     };
-    off_btn->setTitle(off_name());
-    QObject::connect(off_btn, &ButtonControl::clicked, [=]() {
-      const QString sel = MultiOptionDialog::getSelection("시동 끈 뒤 꺼짐", off_names, off_name().section(": ", 1), this);
-      if (sel.isEmpty()) return;
-      Params().put("OptechOffShutdown", std::to_string(off_secs[off_names.indexOf(sel)]));
-      off_btn->setTitle(off_name());
+    shutdown_btn->setTitle(shutdown_name());
+    QObject::connect(shutdown_btn, &ButtonControl::clicked, [=]() {
+      const QString sel = MultiOptionDialog::getSelection("자동 꺼짐", shutdown_names, shutdown_name().section(": ", 1), this);
+      const int idx = shutdown_names.indexOf(sel);
+      if (idx < 0) return;
+      Params().put("OptechAutoShutdown", std::to_string(shutdown_secs[idx]));
+      shutdown_btn->setTitle(shutdown_name());
     });
-    advancedToggles->addItem(off_btn);
+    advancedToggles->addItem(shutdown_btn);
   }
   advancedToggles->addItem(new ParamControl("OpkrHotspotOnBoot", "부팅 시 핫스팟 켜기", "켜 두면 기기가 켜질 때 핫스팟(테더링)이 자동으로 켜집니다.", SHELL_ICON, this));
   advancedToggles->addItem(carrot_section("주행 기록"));
