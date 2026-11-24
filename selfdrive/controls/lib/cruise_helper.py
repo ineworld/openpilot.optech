@@ -742,12 +742,11 @@ class CruiseHelper:
         pass  # driving mode is fixed to 일반; long-pressing the gap button no longer cycles modes
     else:
       self.cruiseButtons = button
-      # C2 port: +/- only change the set speed while speed control is on; they never turn it on or off
-      # (speed control starts with the cruise button, see controlsd EngageWithLong)
       if button == ButtonType.accelCruise:   
         controls.cruiseButtonCounter += 1
         if self.longActiveUser <= 0:
-          pass
+          longActiveUser = 1
+          v_cruise_kph = max(v_cruise_kph, self.v_cruise_kph_backup, self.v_ego_kph_set)
         else:
           if self.xState == XState.softHold:
             longActiveUser = 1
@@ -760,7 +759,8 @@ class CruiseHelper:
       elif button == ButtonType.decelCruise:
         controls.cruiseButtonCounter -= 1
         if self.longActiveUser <= 0:
-          pass
+          v_cruise_kph = self.v_ego_kph_set
+          longActiveUser = 1
         else:
           if self.xState == XState.softHold:
             longActiveUser = 1
@@ -1021,6 +1021,7 @@ class CruiseHelper:
 
     if not controls.enabled:
       self.brake_paused = False
+      self.v_cruise_kph_backup = v_cruise_kph
     self.preBrakePressed = brakePressed
     self.xState_prev = self.xState
     if self.v_ego_kph < 20.0:

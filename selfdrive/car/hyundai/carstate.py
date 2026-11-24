@@ -56,7 +56,8 @@ class CarState(CarStateBase):
 
     self.is_metric = False
      #ajouatom
-    self.prev_pcmMode = False
+    self.preMainMode_ACC = False
+    self.prePcmCruiseMode = True
     self.mdps_error_cnt = 0
 
     self.brake_error = False
@@ -142,7 +143,6 @@ class CarState(CarStateBase):
 
     # cruise state
     acc_disabled = self.acc_disabled(cp)  # once per frame: it counts frames on the Soul EV (SK3)
-    ret.cruiseState.pcmMode = self.prev_pcmMode
     if self.CP.flags & HyundaiFlags.NON_SCC:
       avail_msg, avail_sig, on_msg, on_sig, speed_msg, speed_sig = non_scc_cruise_signals(self.CP)
       ret.cruiseState.available = cp.vl[avail_msg][avail_sig] != 0
@@ -154,12 +154,24 @@ class CarState(CarStateBase):
       ret.cruiseState.available = not acc_disabled
       ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
       ret.cruiseState.standstill = False
+      ret.cruiseState.pcmMode = False
     elif self.CP.openpilotLongitudinalControl: # SCC2 배선개조된경우
-      ret.cruiseState.available = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
-      if ret.cruiseState.available: # 크루즈버튼이 눌림.
+      mainMode_ACC = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
+      ret.cruiseState.pcmMode = self.prePcmCruiseMode
+      if not self.preMainMode_ACC and mainMode_ACC: #사용자가 CruiseSet를 눌렀거나, +-를 눌러 Enable됨.
+        if cp_cruise.vl["SCC12"]["ACCMode"] != 0:
+          ret.cruiseState.pcmMode = True
+        else:
+          ret.cruiseState.pcmMode = False
+      elif not mainMode_ACC:
+        ret.cruiseState.pcmMode = False
+      self.preMainMode_ACC = mainMode_ACC
+      self.prePcmCruiseMode = ret.cruiseState.pcmMode
+
+      if ret.cruiseState.pcmMode:
+        ret.cruiseState.available = cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1
         ret.cruiseState.enabled = cp_cruise.vl["SCC12"]["ACCMode"] != 0
         ret.cruiseState.standstill = False
-        ret.cruiseState.pcmMode = True
       else:
         ret.cruiseState.available = not acc_disabled
         ret.cruiseState.enabled = cp.vl["TCS13"]["ACC_REQ"] == 1
@@ -171,8 +183,6 @@ class CarState(CarStateBase):
       ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
 
       ret.cruiseGap = cp_cruise.vl["SCC11"]["TauGapSet"]
-
-    self.prev_pcmMode = ret.cruiseState.pcmMode
 
     # optech drive record (drivelog, through carcontroller -> carControl.debugTextCC): what the SCC radar tells the
     # cluster - SCCInfoDisplay (its messages, e.g. 'SCC 작동조건이 아님'), DriverAlertDisplay, ACCFailInfo - and ACCMode

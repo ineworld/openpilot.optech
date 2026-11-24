@@ -515,14 +515,6 @@ class CarInterface(CarInterfaceBase):
     allow_enable = any(btn in ENABLE_BUTTONS for btn in self.CS.cruise_buttons) or any(self.CS.main_buttons)
     events = self.create_common_events(ret, pcm_enable=self.CS.CP.pcmCruise, allow_enable=allow_enable)
 
-    # C2 port (one-button use): the cruise main button (CF_Clu_CruiseSwMain) pressed while openpilot is engaged
-    # disengages steering and speed control together. Engaging is unchanged (the SCC turning on gives pcmEnable;
-    # controlsd then starts speed control at once). The II/cancel button keeps its apilot behavior.
-    main_btn = self.CS.main_buttons[-1]
-    if main_btn and not getattr(self, "main_btn_prev", 0) and c.enabled:
-      events.add(car.CarEvent.EventName.buttonCancel)
-    self.main_btn_prev = main_btn
-
     # low speed steer alert hysteresis logic (only for cars with steer cut off above 10 m/s)
     if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
       self.low_speed_alert = True
