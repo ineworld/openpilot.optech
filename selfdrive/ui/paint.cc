@@ -751,11 +751,21 @@ void ui_draw_radar_info(const UIState* s) {
     char str[128];
 
     if (s->show_radar_info) {
+        const auto lead_one = (*s->sm)["radarState"].getRadarState().getLeadOne();
+        const bool skip_lead_one = (s->show_mode == 7) && lead_one.getStatus();
+        const QPointF& lv = s->scene.lead_vertices[0];
+        auto is_primary_lead = [&](float rx, float ry, float rd, float ry_rel) {
+            if (!skip_lead_one) return false;
+            if (std::fabs(rd - lead_one.getDRel()) < 4.0f && std::fabs(ry_rel - lead_one.getYRel()) < 1.4f) return true;
+            if (std::fabs(rx - (float)lv.x()) < 110.f && std::fabs(ry - (float)lv.y()) < 110.f) return true;
+            return false;
+        };
         bool disp = false;
         int wStr = 40;
         if (s->show_radar_info >= 3) {
             for (auto const& vrd : s->scene.lead_vertices_stopped) {
                 auto [rx, ry, rd, rv, ry_rel] = vrd;
+                if (is_primary_lead(rx, ry, rd, ry_rel)) continue;
                 // stopped object: an amber box saying "정지", shaped like the moving ones (user 2026-11-23: the
                 // small '*' was hard to see)
                 const int bw = 84;
@@ -769,6 +779,7 @@ void ui_draw_radar_info(const UIState* s) {
         }
         for (auto const& vrd : s->scene.lead_vertices_ongoing) {
             auto [rx, ry, rd, rv, ry_rel] = vrd;
+            if (is_primary_lead(rx, ry, rd, ry_rel)) continue;
             disp = true;
             sprintf(str, "%.0f", rv * 3.6);
             wStr = 35 * (strlen(str) + 0);
@@ -781,6 +792,7 @@ void ui_draw_radar_info(const UIState* s) {
         }
         for (auto const& vrd : s->scene.lead_vertices_oncoming) {
             auto [rx, ry, rd, rv, ry_rel] = vrd;
+            if (is_primary_lead(rx, ry, rd, ry_rel)) continue;
             sprintf(str, "%.0f", rv * 3.6);
             wStr = 35 * (strlen(str) + 0);
             ui_fill_rect(s->vg, { (int)rx - wStr / 2, (int)ry - 35, wStr, 42 }, COLOR_RED, 15);
@@ -1229,46 +1241,65 @@ static void drawOptechHud(const UIState* s) {
 
     // ======================= bottom centre =======================
     const float cx = s->fb_w / 2.f;
+    float speed_half_w = 96.f;
+    float speed_right_edge = cx + 96.f;
     {
-        // big speed: white steady, red braking / slowing, green speeding up
+        // big speed anchored near bottom edge; GPS speed + unit stacked neatly to its right so the centre stays low
         const float a = car_state.getAEgo();
         NVGcolor c = COLOR_WHITE;
         if (car_state.getBrakePressed() || a < -0.3f) c = nvgRGBA(240, 149, 149, 255);
         else if (a > 0.3f) c = nvgRGBA(151, 196, 89, 255);
         snprintf(str, sizeof(str), "%.0f", cur_speed);
-        optech_text(s, cx, s->fb_h - 66, str, 175, c, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        // unit + GPS speed (green; the dashboard speed reads a few % high) as one line centred under the number
-        const char* unit_str = metric ? "km/h" : "mph";  // like OPKR
+        const float sp_fs = 168.f;
+        nvgFontFace(s->vg, BOLD);
+        nvgFontSize(s->vg, sp_fs);
+        float sb[4];
+        nvgTextBounds(s->vg, 0, 0, str, NULL, sb);
+        speed_half_w = (cur_speed >= 99.5f) ? std::max(138.f, (sb[2] - sb[0]) * 0.5f)
+                                            : std::max(96.f, (sb[2] - sb[0]) * 0.5f);
+        optech_text(s, cx, s->fb_h - 18, str, sp_fs, c, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+
+        const float sx = cx + speed_half_w + 18.f;
+        const char* unit_str = metric ? "km/h" : "mph";
         const bool gps_ok = sm.alive("gpsLocationExternal") && (sm["gpsLocationExternal"].getGpsLocationExternal().getFlags() & 1);
         if (gps_ok) snprintf(str, sizeof(str), "GPS %d", (int)(std::max(sm["gpsLocationExternal"].getGpsLocationExternal().getSpeed() * unit, 0.f) + 0.5f));
         else snprintf(str, sizeof(str), "GPS --");
         nvgFontFace(s->vg, BOLD);
-        nvgFontSize(s->vg, 40);
-        float ub[4], gb[4];
-        nvgTextBounds(s->vg, 0, 0, unit_str, NULL, ub);
+        nvgFontSize(s->vg, 36.f);
+        float gb[4], ub[4];
         nvgTextBounds(s->vg, 0, 0, str, NULL, gb);
-        const float uw = ub[2] - ub[0], gw = gb[2] - gb[0], sp = 24, x0 = cx - (uw + sp + gw) / 2;
-        optech_text(s, x0, s->fb_h - 22, unit_str, 40, nvgRGBA(211, 209, 199, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
-        optech_text(s, x0 + uw + sp, s->fb_h - 22, str, 40, gps_ok ? nvgRGBA(151, 196, 89, 255) : nvgRGBA(136, 135, 128, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+        nvgFontSize(s->vg, 34.f);
+        nvgTextBounds(s->vg, 0, 0, unit_str, NULL, ub);
+        speed_right_edge = sx + std::max(gb[2] - gb[0], ub[2] - ub[0]);
+        optech_text(s, sx, s->fb_h - 64, str, 36, gps_ok ? nvgRGBA(151, 196, 89, 255) : nvgRGBA(136, 135, 128, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
+        optech_text(s, sx, s->fb_h - 22, unit_str, 34, nvgRGBA(211, 209, 199, 255), NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM);
     }
     {
-        // turn signal arrows beside the big speed (OPKR style, three lighting up one after another)
+        // turn signal arrows flanking the speed cluster along the bottom bar
         const bool lb = car_state.getLeftBlinker(), rb = car_state.getRightBlinker();
         if (lb || rb) {
             const int step = (sm.frame / 4) % 4;  // 0..3
-            const float w = 56, h = 104, gap = 42, y = s->fb_h - 184;
+            const float w = 44, h = 82, gap = 32, y = s->fb_h - 110;
+            const float lx_inner = cx - speed_half_w - 22.f;
+            const float rx_inner = speed_right_edge + 20.f;
             for (int i = 0; i < 3; i++) {
                 const int a = (step > i) ? 255 : 70;
                 const NVGcolor col = nvgRGBA(239, 159, 39, a);
-                if (lb) optech_chevron(s, cx - 200 - i * gap - w, y, w, h, false, col);
-                if (rb) optech_chevron(s, cx + 200 + i * gap, y, w, h, true, col);
+                if (lb) optech_chevron(s, lx_inner - i * gap - w, y, w, h, false, col);
+                if (rb) optech_chevron(s, rx_inner + i * gap, y, w, h, true, col);
             }
         }
     }
-    // traffic light + navigation turn guidance on one shared horizontal row above the big speed
+    // traffic light (left of speed) + navigation turn guidance (right of speed), keeping the centre lane open.
+    // Green (tl_mode == 2) is suppressed while cruising so TrafficStopMode > 0 does not keep it lit all drive.
     const int tl_ts = lp.getTrafficState() % 1000;
     const int tl_mode = tl_ts >= 100 ? 3 : (tl_ts % 100);
-    const bool has_tl = tl_mode >= 1 && tl_mode <= 3;
+    const auto x_state = lp.getXState();
+    const bool at_stop = car_state.getVEgo() < 3.0f || car_state.getStandstill() ||
+                         x_state == cereal::LongitudinalPlan::XState::E2E_STOP ||
+                         x_state == cereal::LongitudinalPlan::XState::SOFT_HOLD ||
+                         x_state == cereal::LongitudinalPlan::XState::E2E_CRUISE_PREPARE;
+    const bool has_tl = (tl_mode == 1 || tl_mode == 3) || (tl_mode == 2 && at_stop);
 
     const int turn = road.getXTurnInfo();
     int turn_arrow = 0;
@@ -1288,43 +1319,48 @@ static void drawOptechHud(const UIState* s) {
     }
     const bool has_turn = turn_label != nullptr;
     {
-        const float row_y = s->fb_h - 294;
-        const float tl_w = 248, tl_h = 80, tl_r = 28;
-        float turn_w = 0, turn_iw = 0;
-        const float turn_h = 80, S = 64;
-        char turn_str[128] = "";
-        if (has_turn) {
-            const int dist = road.getXDistToTurn();
-            if (dist > 0) { char d[32]; optech_dist_text(d, sizeof(d), dist, ""); snprintf(turn_str, sizeof(turn_str), "%s %s", turn_label, d); }
-            else snprintf(turn_str, sizeof(turn_str), "%s", turn_label);
-            nvgFontFace(s->vg, BOLD);
-            nvgFontSize(s->vg, 44);
-            float b[4]; nvgTextBounds(s->vg, 0, 0, turn_str, NULL, b);
-            turn_iw = turn_arrow ? S + 16 : 0;
-            turn_w = (b[2] - b[0]) + turn_iw + 44;
-        }
-        float tl_x = cx - tl_w / 2, turn_x = cx - turn_w / 2;
-        if (has_tl && has_turn) {
-            const float row_gap = 18, total_w = tl_w + row_gap + turn_w;
-            tl_x = cx - total_w / 2;
-            turn_x = tl_x + tl_w + row_gap;
-        }
         if (has_tl) {
-            carrot_round_box(s, tl_x, row_y, tl_w, tl_h, nvgRGBA(44, 44, 42, 240), COLOR_WHITE, 14, 3);
+            const float tl_w = 204, tl_h = 64, tl_r = 21;
+            const float tl_x = cx - speed_half_w - 36.f - tl_w;
+            const float tl_y = s->fb_h - 184.f;
+            carrot_round_box(s, tl_x, tl_y, tl_w, tl_h, nvgRGBA(44, 44, 42, 240), COLOR_WHITE, 14, 3);
             const NVGcolor off = nvgRGBA(95, 94, 90, 255);
             const NVGcolor on[3] = {nvgRGBA(226, 75, 74, 255), nvgRGBA(239, 159, 39, 255), nvgRGBA(99, 153, 34, 255)};
             const int lit = tl_mode == 1 ? 0 : tl_mode == 3 ? 1 : 2;  // 1 red, 3 yellow, 2 green
             for (int i = 0; i < 3; i++) {
                 nvgBeginPath(s->vg);
-                nvgCircle(s->vg, tl_x + tl_w / 2 + (i - 1) * 78, row_y + tl_h / 2, tl_r);
+                nvgCircle(s->vg, tl_x + tl_w / 2 + (i - 1) * 62, tl_y + tl_h / 2, tl_r);
                 nvgFillColor(s->vg, i == lit ? on[i] : off);
                 nvgFill(s->vg);
             }
         }
         if (has_turn) {
-            carrot_round_box(s, turn_x, row_y, turn_w, turn_h, nvgRGBA(0, 0, 0, 120), nvgRGBA(0, 0, 0, 0), 12, 0);
-            if (turn_arrow) optech_turn_arrow(s, turn_x + 20, row_y + (turn_h - S) / 2, S, turn_arrow);
-            optech_text(s, turn_x + 22 + turn_iw, row_y + turn_h / 2 + 2, turn_str, 44, COLOR_WHITE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            const float turn_h = 66, S = 52;
+            const float turn_x = cx + speed_half_w + 18.f;
+            const float turn_y = s->fb_h - 186.f;
+            char turn_str[128] = "";
+            const int dist = road.getXDistToTurn();
+            if (dist > 0) { char d[32]; optech_dist_text(d, sizeof(d), dist, ""); snprintf(turn_str, sizeof(turn_str), "%s %s", turn_label, d); }
+            else snprintf(turn_str, sizeof(turn_str), "%s", turn_label);
+            float t_fs = 40.f;
+            nvgFontFace(s->vg, BOLD);
+            nvgFontSize(s->vg, t_fs);
+            float b[4]; nvgTextBounds(s->vg, 0, 0, turn_str, NULL, b);
+            const float turn_iw = turn_arrow ? S + 14.f : 0.f;
+            const float max_turn_w = (s->show_record_btn ? (s->fb_w - 360.f) : (s->fb_w - 205.f)) - turn_x;
+            float turn_w = (b[2] - b[0]) + turn_iw + 38.f;
+            if (max_turn_w > 140.f && turn_w > max_turn_w) {
+                const float avail = std::max(60.f, max_turn_w - turn_iw - 38.f);
+                if (b[2] - b[0] > avail) {
+                    t_fs *= avail / (b[2] - b[0]);
+                    nvgFontSize(s->vg, t_fs);
+                    nvgTextBounds(s->vg, 0, 0, turn_str, NULL, b);
+                }
+                turn_w = (b[2] - b[0]) + turn_iw + 38.f;
+            }
+            carrot_round_box(s, turn_x, turn_y, turn_w, turn_h, nvgRGBA(0, 0, 0, 145), nvgRGBA(255, 255, 255, 65), 12, 1.5f);
+            if (turn_arrow) optech_turn_arrow(s, turn_x + 18, turn_y + (turn_h - S) / 2, S, turn_arrow);
+            optech_text(s, turn_x + 20 + turn_iw, turn_y + turn_h / 2 + 2, turn_str, t_fs, COLOR_WHITE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         }
     }
 
@@ -1334,27 +1370,62 @@ static void drawOptechHud(const UIState* s) {
         if (lead.getStatus()) {
             const float d = lead.getDRel(), vl = std::max(0.f, lead.getVLead() * unit), ve = car_state.getVEgo();
             const bool gap_ok = ve > 1.0f;
-            const float lh = gap_ok ? 150.f : 104.f;
-            const float bottom_hud_top = (has_tl || has_turn) ? (s->fb_h - 294.f) : (s->fb_h - 196.f);
-            const float max_lead_y = std::max(300.f, bottom_hud_top - 10.f - 44.f - lh);
-            const QPointF& v = scene.lead_vertices[0];
-            const float x = std::clamp((float)v.x(), 300.f, s->fb_w - 300.f);
-            const float y = std::clamp((float)v.y(), 300.f, max_lead_y);
-            nvgBeginPath(s->vg);
-            nvgMoveTo(s->vg, x, y - 6); nvgLineTo(s->vg, x + 28, y + 36); nvgLineTo(s->vg, x - 28, y + 36); nvgClosePath(s->vg);
-            nvgFillColor(s->vg, nvgRGBA(239, 159, 39, 255)); nvgFill(s->vg);
-            char l1[32], l2[32], l3[32];
-            snprintf(l1, sizeof(l1), "%s %.0fm", "거리", d);
-            snprintf(l2, sizeof(l2), "%s %.0f%s", "앞차", vl, metric ? "km/h" : "mph");
             const float tgap = gap_ok ? d / ve : 0.f;
-            snprintf(l3, sizeof(l3), "%s %.1f%s", "도달", tgap, "초");
-            const float w = 250, top = y + 44;
-            carrot_round_box(s, x - w / 2, top, w, lh, nvgRGBA(0, 0, 0, 110), nvgRGBA(0, 0, 0, 0), 12, 0);
-            optech_text(s, x, top + 46, l1, 40, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-            optech_text(s, x, top + 92, l2, 40, COLOR_WHITE, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+            const float chev_h = 30.f, chev_gap = 6.f, lh = 50.f, fs = 34.f;
+            const float bottom_hud_top = (has_tl || has_turn) ? (s->fb_h - 186.f) : (s->fb_h - 148.f);
+            const float max_lead_y = std::max(280.f, bottom_hud_top - 10.f - chev_h - chev_gap - lh);
+
+            char s_dist[24], s_spd[24], s_gap[24];
+            snprintf(s_dist, sizeof(s_dist), "%.0fm", d);
+            snprintf(s_spd, sizeof(s_spd), "%.0f%s", vl, metric ? "km/h" : "mph");
+            if (gap_ok) snprintf(s_gap, sizeof(s_gap), "%.1f%s", tgap, "초");
+
+            nvgFontFace(s->vg, BOLD);
+            nvgFontSize(s->vg, fs);
+            float b1[4], b2[4], b3[4] = {0, 0, 0, 0};
+            nvgTextBounds(s->vg, 0, 0, s_dist, NULL, b1);
+            nvgTextBounds(s->vg, 0, 0, s_spd, NULL, b2);
+            if (gap_ok) nvgTextBounds(s->vg, 0, 0, s_gap, NULL, b3);
+            const float w1 = b1[2] - b1[0], w2 = b2[2] - b2[0], w3 = gap_ok ? (b3[2] - b3[0]) : 0.f;
+            const float sep_w = 26.f, pad_x = 20.f;
+            const float pill_w = pad_x * 2.f + w1 + sep_w + w2 + (gap_ok ? (sep_w + w3) : 0.f);
+
+            const QPointF& v = scene.lead_vertices[0];
+            const float min_x = 30.f + CW + 20.f + pill_w * 0.5f;
+            const float max_x = s->fb_w - 30.f - 160.f - 20.f - pill_w * 0.5f;
+            const float x = (min_x < max_x) ? std::clamp((float)v.x(), min_x, max_x) : cx;
+            const float y = std::clamp((float)v.y(), 280.f, max_lead_y);
+
+            // chevron anchored right at the rear bumper so the lead car body above stays uncovered
+            const NVGcolor chev_col = (gap_ok && tgap < 1.0f) ? nvgRGBA(226, 75, 74, 255) : nvgRGBA(239, 159, 39, 255);
+            nvgBeginPath(s->vg);
+            nvgMoveTo(s->vg, x, y);
+            nvgLineTo(s->vg, x + 24.f, y + chev_h);
+            nvgLineTo(s->vg, x - 24.f, y + chev_h);
+            nvgClosePath(s->vg);
+            nvgFillColor(s->vg, chev_col);
+            nvgFill(s->vg);
+            nvgStrokeColor(s->vg, nvgRGBA(0, 0, 0, 160));
+            nvgStrokeWidth(s->vg, 2.f);
+            nvgStroke(s->vg);
+
+            const float top = y + chev_h + chev_gap, cy = top + lh * 0.5f;
+            const float px = x - pill_w * 0.5f;
+            carrot_round_box(s, px, top, pill_w, lh, nvgRGBA(18, 18, 18, 175), nvgRGBA(255, 255, 255, 75), 14, 1.5f);
+
+            float tx = px + pad_x;
+            const NVGcolor dot_col = nvgRGBA(180, 178, 169, 200);
+            optech_text_vc(s, tx, cy, s_dist, fs, COLOR_WHITE, NVG_ALIGN_LEFT);
+            tx += w1;
+            nvgBeginPath(s->vg); nvgCircle(s->vg, tx + sep_w * 0.5f, cy, 3.5f); nvgFillColor(s->vg, dot_col); nvgFill(s->vg);
+            tx += sep_w;
+            optech_text_vc(s, tx, cy, s_spd, fs, COLOR_WHITE, NVG_ALIGN_LEFT);
             if (gap_ok) {
+                tx += w2;
+                nvgBeginPath(s->vg); nvgCircle(s->vg, tx + sep_w * 0.5f, cy, 3.5f); nvgFillColor(s->vg, dot_col); nvgFill(s->vg);
+                tx += sep_w;
                 const NVGcolor gc = tgap < 1.0f ? nvgRGBA(240, 149, 149, 255) : tgap < 2.0f ? nvgRGBA(250, 199, 117, 255) : COLOR_WHITE;
-                optech_text(s, x, top + 138, l3, 40, gc, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+                optech_text_vc(s, tx, cy, s_gap, fs, gc, NVG_ALIGN_LEFT);
             }
         }
     }
@@ -2523,7 +2594,7 @@ static void ui_draw_gps_info(const UIState* s) {
         nvgFontSize(s->vg, fs);
         float tb[4];
         nvgTextBounds(s->vg, 0, 0, str, NULL, tb);
-        const float max_w = (s->fb_w / 2.f - 150.f) - bx;
+        const float max_w = (s->fb_w / 2.f - 280.f) - bx;
         float w = 18 + barsw + 14 + (tb[2] - tb[0]) + 20;
         if (max_w > 100.f && w > max_w) {
             const float avail_tw = std::max(40.f, max_w - (18 + barsw + 14 + 20));
@@ -2704,9 +2775,9 @@ void ui_draw_alert(UIState* s) {
     if (alert.size != cereal::ControlsState::AlertSize::NONE) {
         alert_color = COLOR_ORANGE;
         nvgTextAlign(s->vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
-        const float y1 = (s->show_mode == 7) ? (s->fb_h - 460) : (s->fb_h - 300);
-        const float y2 = (s->show_mode == 7) ? (s->fb_h - 370) : (s->fb_h - 200);
-        const float y3 = (s->show_mode == 7) ? (s->fb_h - 305) : (s->fb_h - 120);
+        const float y1 = (s->show_mode == 7) ? (s->fb_h - 350) : (s->fb_h - 300);
+        const float y2 = (s->show_mode == 7) ? (s->fb_h - 260) : (s->fb_h - 200);
+        const float y3 = (s->show_mode == 7) ? (s->fb_h - 195) : (s->fb_h - 120);
         ui_draw_text(s, s->fb_w / 2, y1, alert.text1.toStdString().c_str(), 100, alert_color, BOLD, 3.0f, 8.0f);
         ui_draw_text(s, s->fb_w / 2, y2, alert.text2.toStdString().c_str(), 70, alert_color, BOLD, 3.0f, 8.0f);
         // optech: a third line on 'take control' alerts saying what happens to openpilot
